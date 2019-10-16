@@ -6,14 +6,14 @@
 
 #include "src/regexp/ppc/regexp-macro-assembler-ppc.h"
 
-#include "src/assembler-inl.h"
 #include "src/base/bits.h"
-#include "src/log.h"
-#include "src/macro-assembler.h"
+#include "src/codegen/assembler-inl.h"
+#include "src/codegen/macro-assembler.h"
+#include "src/logging/log.h"
 #include "src/regexp/regexp-macro-assembler.h"
 #include "src/regexp/regexp-stack.h"
-#include "src/snapshot/embedded-data.h"
-#include "src/unicode.h"
+#include "src/snapshot/embedded/embedded-data.h"
+#include "src/strings/unicode.h"
 
 namespace v8 {
 namespace internal {
@@ -189,14 +189,13 @@ void RegExpMacroAssemblerPPC::CheckCharacterGT(uc16 limit, Label* on_greater) {
   BranchOrBacktrack(gt, on_greater);
 }
 
-
-void RegExpMacroAssemblerPPC::CheckAtStart(Label* on_at_start) {
+void RegExpMacroAssemblerPPC::CheckAtStart(int cp_offset, Label* on_at_start) {
   __ LoadP(r4, MemOperand(frame_pointer(), kStringStartMinusOne));
-  __ addi(r3, current_input_offset(), Operand(-char_size()));
+  __ addi(r3, current_input_offset(),
+          Operand(-char_size() + cp_offset * char_size()));
   __ cmp(r3, r4);
   BranchOrBacktrack(eq, on_at_start);
 }
-
 
 void RegExpMacroAssemblerPPC::CheckNotAtStart(int cp_offset,
                                               Label* on_not_at_start) {
@@ -689,7 +688,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
     Label stack_ok;
 
     ExternalReference stack_limit =
-        ExternalReference::address_of_stack_limit(isolate());
+        ExternalReference::address_of_jslimit(isolate());
     __ mov(r3, Operand(stack_limit));
     __ LoadP(r3, MemOperand(r3));
     __ sub(r3, sp, r3, LeaveOE, SetRC);
@@ -756,7 +755,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
       if (num_saved_registers_ > 8) {
         // One slot beyond address of register 0.
         __ addi(r4, frame_pointer(), Operand(kRegisterZero + kPointerSize));
-        __ li(r5, Operand(num_saved_registers_));
+        __ mov(r5, Operand(num_saved_registers_));
         __ mtctr(r5);
         Label init_loop;
         __ bind(&init_loop);
@@ -938,8 +937,9 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
 
   CodeDesc code_desc;
   masm_->GetCode(isolate(), &code_desc);
-  Handle<Code> code = isolate()->factory()->NewCode(code_desc, Code::REGEXP,
-                                                    masm_->CodeObject());
+  Handle<Code> code = Factory::CodeBuilder(isolate(), code_desc, Code::REGEXP)
+                          .set_self_reference(masm_->CodeObject())
+                          .Build();
   PROFILE(masm_->isolate(),
           RegExpCodeCreateEvent(AbstractCode::cast(*code), *source));
   return Handle<HeapObject>::cast(code);
@@ -977,22 +977,25 @@ RegExpMacroAssemblerPPC::Implementation() {
   return kPPCImplementation;
 }
 
+void RegExpMacroAssemblerPPC::LoadCurrentCharacterImpl(int cp_offset,
+                                                       Label* on_end_of_input,
+                                                       bool check_bounds,
+                                                       int characters,
+                                                       int eats_at_least) {
+  // It's possible to preload a small number of characters when each success
+  // path requires a large number of characters, but not the reverse.
+  DCHECK_GE(eats_at_least, characters);
 
-void RegExpMacroAssemblerPPC::LoadCurrentCharacter(int cp_offset,
-                                                   Label* on_end_of_input,
-                                                   bool check_bounds,
-                                                   int characters) {
   DCHECK(cp_offset < (1 << 30));  // Be sane! (And ensure negation works)
   if (check_bounds) {
     if (cp_offset >= 0) {
-      CheckPosition(cp_offset + characters - 1, on_end_of_input);
+      CheckPosition(cp_offset + eats_at_least - 1, on_end_of_input);
     } else {
       CheckPosition(cp_offset, on_end_of_input);
     }
   }
   LoadCurrentCharacterUnchecked(cp_offset, characters);
 }
-
 
 void RegExpMacroAssemblerPPC::PopCurrentPosition() {
   Pop(current_input_offset());
@@ -1176,8 +1179,10 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   return NativeRegExpMacroAssembler::CheckStackGuardState(
       frame_entry<Isolate*>(re_frame, kIsolate),
       frame_entry<intptr_t>(re_frame, kStartIndex),
-      frame_entry<intptr_t>(re_frame, kDirectCall) == 1, return_address,
-      re_code, frame_entry_address<Address>(re_frame, kInputString),
+      static_cast<RegExp::CallOrigin>(
+          frame_entry<intptr_t>(re_frame, kDirectCall)),
+      return_address, re_code,
+      frame_entry_address<Address>(re_frame, kInputString),
       frame_entry_address<const byte*>(re_frame, kInputStart),
       frame_entry_address<const byte*>(re_frame, kInputEnd));
 }
@@ -1266,7 +1271,7 @@ void RegExpMacroAssemblerPPC::Pop(Register target) {
 void RegExpMacroAssemblerPPC::CheckPreemption() {
   // Check for preemption.
   ExternalReference stack_limit =
-      ExternalReference::address_of_stack_limit(isolate());
+      ExternalReference::address_of_jslimit(isolate());
   __ mov(r3, Operand(stack_limit));
   __ LoadP(r3, MemOperand(r3));
   __ cmpl(sp, r3);
@@ -1276,7 +1281,7 @@ void RegExpMacroAssemblerPPC::CheckPreemption() {
 
 void RegExpMacroAssemblerPPC::CheckStackLimit() {
   ExternalReference stack_limit =
-      ExternalReference::address_of_regexp_stack_limit(isolate());
+      ExternalReference::address_of_regexp_stack_limit_address(isolate());
   __ mov(r3, Operand(stack_limit));
   __ LoadP(r3, MemOperand(r3));
   __ cmpl(backtrack_stackpointer(), r3);

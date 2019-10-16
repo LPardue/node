@@ -4,9 +4,9 @@
 
 #include "src/builtins/builtins-utils-gen.h"
 #include "src/builtins/builtins.h"
-#include "src/code-factory.h"
-#include "src/code-stub-assembler.h"
-#include "src/objects-inl.h"
+#include "src/codegen/code-factory.h"
+#include "src/codegen/code-stub-assembler.h"
+#include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
 
 namespace v8 {
@@ -29,7 +29,7 @@ class ConversionBuiltinsAssembler : public CodeStubAssembler {
 void ConversionBuiltinsAssembler::Generate_NonPrimitiveToPrimitive(
     Node* context, Node* input, ToPrimitiveHint hint) {
   // Lookup the @@toPrimitive property on the {input}.
-  Node* exotic_to_prim =
+  TNode<Object> exotic_to_prim =
       GetProperty(context, input, factory()->to_primitive_symbol());
 
   // Check if {exotic_to_prim} is neither null nor undefined.
@@ -40,7 +40,8 @@ void ConversionBuiltinsAssembler::Generate_NonPrimitiveToPrimitive(
     // representation of the {hint}.
     Callable callable =
         CodeFactory::Call(isolate(), ConvertReceiverMode::kNotNullOrUndefined);
-    Node* hint_string = HeapConstant(factory()->ToPrimitiveHintString(hint));
+    TNode<String> hint_string =
+        HeapConstant(factory()->ToPrimitiveHintString(hint));
     Node* result =
         CallJS(callable, context, exotic_to_prim, input, hint_string);
 
@@ -48,7 +49,7 @@ void ConversionBuiltinsAssembler::Generate_NonPrimitiveToPrimitive(
     Label if_resultisprimitive(this),
         if_resultisnotprimitive(this, Label::kDeferred);
     GotoIf(TaggedIsSmi(result), &if_resultisprimitive);
-    Node* result_instance_type = LoadInstanceType(result);
+    TNode<Uint16T> result_instance_type = LoadInstanceType(result);
     Branch(IsPrimitiveInstanceType(result_instance_type), &if_resultisprimitive,
            &if_resultisnotprimitive);
 
@@ -119,7 +120,7 @@ TF_BUILTIN(ToName, CodeStubAssembler) {
     Label if_inputisbigint(this), if_inputisname(this), if_inputisnumber(this),
         if_inputisoddball(this), if_inputisreceiver(this, Label::kDeferred);
     GotoIf(TaggedIsSmi(input), &if_inputisnumber);
-    Node* input_instance_type = LoadInstanceType(input);
+    TNode<Uint16T> input_instance_type = LoadInstanceType(input);
     STATIC_ASSERT(FIRST_NAME_TYPE == FIRST_TYPE);
     GotoIf(IsNameInstanceType(input_instance_type), &if_inputisname);
     GotoIf(IsJSReceiverInstanceType(input_instance_type), &if_inputisreceiver);
@@ -131,7 +132,7 @@ TF_BUILTIN(ToName, CodeStubAssembler) {
     {
       // We don't have a fast-path for BigInt currently, so just
       // tail call to the %ToString runtime function here for now.
-      TailCallRuntime(Runtime::kToString, context, input);
+      TailCallRuntime(Runtime::kToStringRT, context, input);
     }
 
     BIND(&if_inputisname);
@@ -211,14 +212,6 @@ TF_BUILTIN(NumberToString, CodeStubAssembler) {
   Return(NumberToString(input));
 }
 
-// ES section #sec-tostring
-TF_BUILTIN(ToString, CodeStubAssembler) {
-  Node* context = Parameter(Descriptor::kContext);
-  Node* input = Parameter(Descriptor::kArgument);
-
-  Return(ToString(context, input));
-}
-
 // 7.1.1.1 OrdinaryToPrimitive ( O, hint )
 void ConversionBuiltinsAssembler::Generate_OrdinaryToPrimitive(
     Node* context, Node* input, OrdinaryToPrimitiveHint hint) {
@@ -238,13 +231,13 @@ void ConversionBuiltinsAssembler::Generate_OrdinaryToPrimitive(
   }
   for (Handle<String> name : method_names) {
     // Lookup the {name} on the {input}.
-    Node* method = GetProperty(context, input, name);
+    TNode<Object> method = GetProperty(context, input, name);
 
     // Check if the {method} is callable.
     Label if_methodiscallable(this),
         if_methodisnotcallable(this, Label::kDeferred);
     GotoIf(TaggedIsSmi(method), &if_methodisnotcallable);
-    Node* method_map = LoadMap(method);
+    TNode<Map> method_map = LoadMap(CAST(method));
     Branch(IsCallableMap(method_map), &if_methodiscallable,
            &if_methodisnotcallable);
 
@@ -258,7 +251,7 @@ void ConversionBuiltinsAssembler::Generate_OrdinaryToPrimitive(
 
       // Return the {result} if it is a primitive.
       GotoIf(TaggedIsSmi(result), &return_result);
-      Node* result_instance_type = LoadInstanceType(result);
+      TNode<Uint16T> result_instance_type = LoadInstanceType(result);
       GotoIf(IsPrimitiveInstanceType(result_instance_type), &return_result);
     }
 
@@ -348,7 +341,7 @@ TF_BUILTIN(ToLength, CodeStubAssembler) {
     BIND(&if_lenisheapnumber);
     {
       // Load the floating-point value of {len}.
-      Node* len_value = LoadHeapNumberValue(len);
+      TNode<Float64T> len_value = LoadHeapNumberValue(len);
 
       // Check if {len} is not greater than zero.
       GotoIfNot(Float64GreaterThan(len_value, Float64Constant(0.0)),
@@ -360,8 +353,8 @@ TF_BUILTIN(ToLength, CodeStubAssembler) {
              &return_two53minus1);
 
       // Round the {len} towards -Infinity.
-      Node* value = Float64Floor(len_value);
-      Node* result = ChangeFloat64ToTagged(value);
+      TNode<Float64T> value = Float64Floor(len_value);
+      TNode<Number> result = ChangeFloat64ToTagged(value);
       Return(result);
     }
 
@@ -400,7 +393,8 @@ TF_BUILTIN(ToInteger_TruncateMinusZero, CodeStubAssembler) {
 // ES6 section 7.1.13 ToObject (argument)
 TF_BUILTIN(ToObject, CodeStubAssembler) {
   Label if_smi(this, Label::kDeferred), if_jsreceiver(this),
-      if_noconstructor(this, Label::kDeferred), if_wrapjsvalue(this);
+      if_noconstructor(this, Label::kDeferred),
+      if_wrapjs_primitive_wrapper(this);
 
   Node* context = Parameter(Descriptor::kContext);
   Node* object = Parameter(Descriptor::kArgument);
@@ -410,36 +404,40 @@ TF_BUILTIN(ToObject, CodeStubAssembler) {
 
   GotoIf(TaggedIsSmi(object), &if_smi);
 
-  Node* map = LoadMap(object);
-  Node* instance_type = LoadMapInstanceType(map);
+  TNode<Map> map = LoadMap(object);
+  TNode<Uint16T> instance_type = LoadMapInstanceType(map);
   GotoIf(IsJSReceiverInstanceType(instance_type), &if_jsreceiver);
 
-  Node* constructor_function_index = LoadMapConstructorFunctionIndex(map);
+  TNode<IntPtrT> constructor_function_index =
+      LoadMapConstructorFunctionIndex(map);
   GotoIf(WordEqual(constructor_function_index,
                    IntPtrConstant(Map::kNoConstructorFunctionIndex)),
          &if_noconstructor);
   constructor_function_index_var.Bind(constructor_function_index);
-  Goto(&if_wrapjsvalue);
+  Goto(&if_wrapjs_primitive_wrapper);
 
   BIND(&if_smi);
   constructor_function_index_var.Bind(
       IntPtrConstant(Context::NUMBER_FUNCTION_INDEX));
-  Goto(&if_wrapjsvalue);
+  Goto(&if_wrapjs_primitive_wrapper);
 
-  BIND(&if_wrapjsvalue);
-  TNode<Context> native_context = LoadNativeContext(context);
-  Node* constructor = LoadContextElement(
-      native_context, constructor_function_index_var.value());
-  Node* initial_map =
+  BIND(&if_wrapjs_primitive_wrapper);
+  TNode<NativeContext> native_context = LoadNativeContext(context);
+  TNode<JSFunction> constructor = CAST(LoadContextElement(
+      native_context, constructor_function_index_var.value()));
+  TNode<Object> initial_map =
       LoadObjectField(constructor, JSFunction::kPrototypeOrInitialMapOffset);
-  Node* js_value = Allocate(JSValue::kSize);
-  StoreMapNoWriteBarrier(js_value, initial_map);
-  StoreObjectFieldRoot(js_value, JSValue::kPropertiesOrHashOffset,
+  TNode<HeapObject> js_primitive_wrapper = Allocate(JSPrimitiveWrapper::kSize);
+  StoreMapNoWriteBarrier(js_primitive_wrapper, initial_map);
+  StoreObjectFieldRoot(js_primitive_wrapper,
+                       JSPrimitiveWrapper::kPropertiesOrHashOffset,
                        RootIndex::kEmptyFixedArray);
-  StoreObjectFieldRoot(js_value, JSObject::kElementsOffset,
+  StoreObjectFieldRoot(js_primitive_wrapper,
+                       JSPrimitiveWrapper::kElementsOffset,
                        RootIndex::kEmptyFixedArray);
-  StoreObjectField(js_value, JSValue::kValueOffset, object);
-  Return(js_value);
+  StoreObjectField(js_primitive_wrapper, JSPrimitiveWrapper::kValueOffset,
+                   object);
+  Return(js_primitive_wrapper);
 
   BIND(&if_noconstructor);
   ThrowTypeError(context, MessageTemplate::kUndefinedOrNullToObject,

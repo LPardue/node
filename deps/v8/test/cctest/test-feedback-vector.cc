@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/init/v8.h"
 #include "test/cctest/cctest.h"
 
-#include "src/api-inl.h"
+#include "src/api/api-inl.h"
+#include "src/codegen/macro-assembler.h"
 #include "src/debug/debug.h"
-#include "src/execution.h"
-#include "src/global-handles.h"
+#include "src/execution/execution.h"
+#include "src/handles/global-handles.h"
 #include "src/heap/factory.h"
-#include "src/macro-assembler.h"
-#include "src/objects-inl.h"
 #include "src/objects/feedback-cell-inl.h"
+#include "src/objects/objects-inl.h"
 #include "test/cctest/test-feedback-vector.h"
 
 namespace v8 {
@@ -26,7 +26,7 @@ namespace {
 
 static Handle<JSFunction> GetFunction(const char* name) {
   v8::MaybeLocal<v8::Value> v8_f = CcTest::global()->Get(
-      v8::Isolate::GetCurrent()->GetCurrentContext(), v8_str(name));
+      CcTest::isolate()->GetCurrentContext(), v8_str(name));
   Handle<JSFunction> f =
       Handle<JSFunction>::cast(v8::Utils::OpenHandle(*v8_f.ToLocalChecked()));
   return f;
@@ -94,7 +94,7 @@ TEST(VectorStructure) {
     vector = NewFeedbackVector(isolate, &spec);
     FeedbackVectorHelper helper(vector);
     FeedbackCell cell = *vector->GetClosureFeedbackCell(0);
-    CHECK_EQ(cell->value(), *factory->undefined_value());
+    CHECK_EQ(cell.value(), *factory->undefined_value());
   }
 }
 
@@ -438,9 +438,7 @@ TEST(VectorLoadICStates) {
       Handle<FeedbackVector>(f->feedback_vector(), isolate);
   FeedbackSlot slot(0);
   FeedbackNexus nexus(feedback_vector, slot);
-  CHECK_EQ(PREMONOMORPHIC, nexus.ic_state());
 
-  CompileRun("f(o)");
   CHECK_EQ(MONOMORPHIC, nexus.ic_state());
   // Verify that the monomorphic map is the one we expect.
   v8::MaybeLocal<v8::Value> v8_o =
@@ -526,16 +524,13 @@ TEST(VectorLoadICOnSmi) {
   CompileRun(
       "var o = { foo: 3 };"
       "%EnsureFeedbackVectorForFunction(f);"
-      "function f(a) { return a.foo; } f(o);");
+      "function f(a) { return a.foo; } f(34);");
   Handle<JSFunction> f = GetFunction("f");
   // There should be one IC.
   Handle<FeedbackVector> feedback_vector =
       Handle<FeedbackVector>(f->feedback_vector(), isolate);
   FeedbackSlot slot(0);
   FeedbackNexus nexus(feedback_vector, slot);
-  CHECK_EQ(PREMONOMORPHIC, nexus.ic_state());
-
-  CompileRun("f(34)");
   CHECK_EQ(MONOMORPHIC, nexus.ic_state());
   // Verify that the monomorphic map is the one we expect.
   Map number_map = ReadOnlyRoots(heap).heap_number_map();

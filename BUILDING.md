@@ -35,21 +35,23 @@ file a new issue.
     * [Building Node.js](#building-nodejs-1)
   * [Android/Android-based devices (e.g. Firefox OS)](#androidandroid-based-devices-eg-firefox-os)
 * [`Intl` (ECMA-402) support](#intl-ecma-402-support)
-  * [Default: `small-icu` (English only) support](#default-small-icu-english-only-support)
   * [Build with full ICU support (all locales supported by ICU)](#build-with-full-icu-support-all-locales-supported-by-icu)
     * [Unix/macOS](#unixmacos)
     * [Windows](#windows-1)
-  * [Building without Intl support](#building-without-intl-support)
+  * [Trimmed: `small-icu` (English only) support](#trimmed-small-icu-english-only-support)
     * [Unix/macOS](#unixmacos-1)
     * [Windows](#windows-2)
-  * [Use existing installed ICU (Unix/macOS only)](#use-existing-installed-icu-unixmacOS-only)
-  * [Build with a specific ICU](#build-with-a-specific-icu)
+  * [Building without Intl support](#building-without-intl-support)
     * [Unix/macOS](#unixmacos-2)
     * [Windows](#windows-3)
+  * [Use existing installed ICU (Unix/macOS only)](#use-existing-installed-icu-unixmacOS-only)
+  * [Build with a specific ICU](#build-with-a-specific-icu)
+    * [Unix/macOS](#unixmacos-3)
+    * [Windows](#windows-4)
 * [Building Node.js with FIPS-compliant OpenSSL](#building-nodejs-with-fips-compliant-openssl)
 * [Building Node.js with external core modules](#building-nodejs-with-external-core-modules)
-  * [Unix/macOS](#unixmacos-3)
-  * [Windows](#windows-4)
+  * [Unix/macOS](#unixmacos-4)
+  * [Windows](#windows-5)
 * [Note for downstream distributors of Node.js](#note-for-downstream-distributors-of-nodejs)
 
 ## Supported platforms
@@ -116,7 +118,7 @@ platforms. This is true regardless of entries in the table below.
 | Windows          | arm64            | >= Windows 10                   | Experimental |                                   |
 | macOS            | x64              | >= 10.11                        | Tier 1       |                                   |
 | SmartOS          | x64              | >= 18                           | Tier 2       |                                   |
-| AIX              | ppc64be >=power7 | >= 7.1 TL05                     | Tier 2       |                                   |
+| AIX              | ppc64be >=power7 | >= 7.2 TL02                     | Tier 2       |                                   |
 | FreeBSD          | x64              | >= 11                           | Experimental | Downgraded as of Node.js 12       |
 
 <em id="fn1">1</em>: GCC 6 is not provided on the base platform, users will
@@ -159,7 +161,7 @@ Depending on the host platform, the selection of toolchains may vary.
 | ---------------- | -------------------------------------------------------------- |
 | Linux            | GCC >= 6.3                                                     |
 | Windows          | Visual Studio >= 2017 with the Windows 10 SDK on a 64-bit host |
-| macOS            | Xcode >= 8 (Apple LLVM >= 8)                                   |
+| macOS            | Xcode >= 10 (Apple LLVM >= 10)                                 |
 
 ### Official binary platforms and toolchains
 
@@ -168,7 +170,7 @@ Binaries at <https://nodejs.org/download/release/> are produced on:
 | Binary package        | Platform and Toolchain                                                   |
 | --------------------- | ------------------------------------------------------------------------ |
 | aix-ppc64             | AIX 7.1 TL05 on PPC64BE with GCC 6                                       |
-| darwin-x64 (and .pkg) | macOS 10.11, Xcode Command Line Tools 8 with -mmacosx-version-min=10.10  |
+| darwin-x64 (and .pkg) | macOS 10.11, Xcode Command Line Tools 10 with -mmacosx-version-min=10.10 |
 | linux-arm64           | CentOS 7 with devtoolset-6 / GCC 6                                       |
 | linux-armv7l          | Cross-compiled on Ubuntu 16.04 x64 with [custom GCC toolchain](https://github.com/rvagg/rpi-newer-crosstools)   |
 | linux-ppc64le         | CentOS 7 with devtoolset-6 / GCC 6 <sup>[7](#fn7)</sup>                  |
@@ -243,8 +245,8 @@ transition before the year-end deadline.
 * `gcc` and `g++` >= 6.3 or newer, or
 * GNU Make 3.81 or newer
 * Python (see note above)
-    * Python 2.7
-    * Python 3.5, 3.6, and 3.7 are experimental.
+  * Python 2.7
+  * Python 3.5, 3.6, and 3.7 are experimental.
 
 Installation via Linux package manager can be achieved with:
 
@@ -257,10 +259,10 @@ FreeBSD and OpenBSD users may also need to install `libexecinfo`.
 
 #### macOS prerequisites
 
-* Xcode Command Line Tools >= 8 for macOS
+* Xcode Command Line Tools >= 10 for macOS
 * Python (see note above)
-    * Python 2.7
-    * Python 3.5, 3.6, and 3.7 are experimental.
+  * Python 2.7
+  * Python 3.5, 3.6, and 3.7 are experimental.
 
 macOS users can install the `Xcode Command Line Tools` by running
 `xcode-select --install`. Alternatively, if you already have the full Xcode
@@ -322,14 +324,13 @@ Make sure the linter does not report any issues and that all tests pass. Please
 do not submit patches that fail either check.
 
 If you want to run the linter without running tests, use
-`make lint`/`vcbuild lint`. It will run both JavaScript linting and
-C++ linting.
+`make lint`/`vcbuild lint`. It will lint JavaScript, C++, and Markdown files.
 
 If you are updating tests and want to run tests in a single test file
 (e.g. `test/parallel/test-stream2-transform.js`):
 
 ```text
-$ python tools/test.py parallel/test-stream2-transform.js
+$ python tools/test.py test/parallel/test-stream2-transform.js
 ```
 
 You can execute the entire suite of tests for a given subsystem
@@ -502,16 +503,16 @@ $ backtrace
   [Build Tools](https://www.visualstudio.com/downloads/#build-tools-for-visual-studio-2017),
   with the default optional components.
 * Basic Unix tools required for some tests,
-  [Git for Windows](http://git-scm.com/download/win) includes Git Bash
+  [Git for Windows](https://git-scm.com/download/win) includes Git Bash
   and tools which can be included in the global `PATH`.
-* The [NetWide Assembler](http://www.nasm.us/), for OpenSSL assembler modules.
+* The [NetWide Assembler](https://www.nasm.us/), for OpenSSL assembler modules.
   If not installed in the default location, it needs to be manually added
   to `PATH`. A build with the `openssl-no-asm` option does not need this, nor
   does a build targeting ARM64 Windows.
 
 Optional requirements to build the MSI installer package:
 
-* The [WiX Toolset v3.11](http://wixtoolset.org/releases/) and the
+* The [WiX Toolset v3.11](https://wixtoolset.org/releases/) and the
   [Wix Toolset Visual Studio 2017 Extension](https://marketplace.visualstudio.com/items?itemName=RobMensching.WixToolsetVisualStudio2017Extension).
 
 Optional requirements for compiling for Windows 10 on ARM (ARM64):
@@ -528,7 +529,7 @@ Optional requirements for compiling for Windows 10 on ARM (ARM64):
 ##### Option 2: Automated install with Boxstarter
 <a name="boxstarter"></a>
 
-A [Boxstarter](http://boxstarter.org/) script can be used for easy setup of
+A [Boxstarter](https://boxstarter.org/) script can be used for easy setup of
 Windows systems with all the required prerequisites for Node.js development.
 This script will install the following [Chocolatey](https://chocolatey.org/)
 packages:
@@ -542,8 +543,8 @@ packages:
 * [NetWide Assembler](https://chocolatey.org/packages/nasm)
 
 To install Node.js prerequisites using
-[Boxstarter WebLauncher](http://boxstarter.org/WebLauncher), open
-<http://boxstarter.org/package/nr/url?https://raw.githubusercontent.com/nodejs/node/master/tools/bootstrap/windows_boxstarter>
+[Boxstarter WebLauncher](https://boxstarter.org/WebLauncher), open
+<https://boxstarter.org/package/nr/url?https://raw.githubusercontent.com/nodejs/node/master/tools/bootstrap/windows_boxstarter>
 with Internet Explorer or Edge browser on the target machine.
 
 Alternatively, you can use PowerShell. Run those commands from an elevated
@@ -551,7 +552,7 @@ PowerShell terminal:
 
 ```powershell
 Set-ExecutionPolicy Unrestricted -Force
-iex ((New-Object System.Net.WebClient).DownloadString('http://boxstarter.org/bootstrapper.ps1'))
+iex ((New-Object System.Net.WebClient).DownloadString('https://boxstarter.org/bootstrapper.ps1'))
 get-boxstarter -Force
 Install-BoxstarterPackage https://raw.githubusercontent.com/nodejs/node/master/tools/bootstrap/windows_boxstarter -DisableReboots
 ```
@@ -599,31 +600,40 @@ $ make
 ## `Intl` (ECMA-402) support
 
 [Intl](https://github.com/nodejs/node/blob/master/doc/api/intl.md) support is
-enabled by default, with English data only.
-
-### Default: `small-icu` (English only) support
-
-By default, only English data is included, but
-the full `Intl` (ECMA-402) APIs.  It does not need to download
-any dependencies to function. You can add full
-data at runtime.
+enabled by default.
 
 ### Build with full ICU support (all locales supported by ICU)
 
-With the `--download=all`, this may download ICU if you don't have an
-ICU in `deps/icu`. (The embedded `small-icu` included in the default
-Node.js source does not include all locales.)
+This is the default option.
 
 #### Unix/macOS
 
 ```console
-$ ./configure --with-intl=full-icu --download=all
+$ ./configure --with-intl=full-icu
 ```
 
 #### Windows
 
 ```console
-> .\vcbuild full-icu download-all
+> .\vcbuild full-icu
+```
+
+### Trimmed: `small-icu` (English only) support
+
+ In this configuration, only English data is included, but
+the full `Intl` (ECMA-402) APIs.  It does not need to download
+any dependencies to function. You can add full data at runtime.
+
+#### Unix/macOS
+
+```console
+$ ./configure --with-intl=small-icu
+```
+
+#### Windows
+
+```console
+> .\vcbuild small-icu
 ```
 
 ### Building without Intl support
@@ -666,16 +676,19 @@ during configuration if the ICU version is too old.
 #### Unix/macOS
 
 From an already-unpacked ICU:
+
 ```console
 $ ./configure --with-intl=[small-icu,full-icu] --with-icu-source=/path/to/icu
 ```
 
 From a local ICU tarball:
+
 ```console
 $ ./configure --with-intl=[small-icu,full-icu] --with-icu-source=/path/to/icu.tgz
 ```
 
 From a tarball URL:
+
 ```console
 $ ./configure --with-intl=full-icu --with-icu-source=http://url/to/icu.tgz
 ```

@@ -34,15 +34,10 @@ void DebugOptions::CheckOptions(std::vector<std::string>* errors) {
   }
 #endif
 
-  if (deprecated_debug && !inspector_enabled) {
+  if (deprecated_debug) {
     errors->push_back("[DEP0062]: `node --debug` and `node --debug-brk` "
-                      "are invalid. Please use `node --inspect` or "
+                      "are invalid. Please use `node --inspect` and "
                       "`node --inspect-brk` instead.");
-  }
-
-  if (deprecated_debug && inspector_enabled && break_first_line) {
-    errors->push_back("[DEP0062]: `node --inspect --debug-brk` is deprecated. "
-                      "Please use `node --inspect-brk` instead.");
   }
 
   std::vector<std::string> destinations =
@@ -119,7 +114,15 @@ void PerIsolateOptions::CheckOptions(std::vector<std::string>* errors) {
 
 void EnvironmentOptions::CheckOptions(std::vector<std::string>* errors) {
   if (!userland_loader.empty() && !experimental_modules) {
-    errors->push_back("--loader requires --experimental-modules be enabled");
+    errors->push_back("--experimental-loader requires "
+                      "--experimental-modules be enabled");
+  }
+  if (has_policy_integrity_string && experimental_policy.empty()) {
+    errors->push_back("--policy-integrity requires "
+                      "--experimental-policy be enabled");
+  }
+  if (has_policy_integrity_string && experimental_policy_integrity.empty()) {
+    errors->push_back("--policy-integrity cannot be empty");
   }
 
   if (!module_type.empty()) {
@@ -130,6 +133,11 @@ void EnvironmentOptions::CheckOptions(std::vector<std::string>* errors) {
     if (module_type != "commonjs" && module_type != "module") {
       errors->push_back("--input-type must be \"module\" or \"commonjs\"");
     }
+  }
+
+  if (experimental_json_modules && !experimental_modules) {
+    errors->push_back("--experimental-json-modules requires "
+                      "--experimental-modules be enabled");
   }
 
   if (experimental_wasm_modules && !experimental_modules) {
@@ -150,10 +158,6 @@ void EnvironmentOptions::CheckOptions(std::vector<std::string>* errors) {
 
   if (syntax_check_only && has_eval_string) {
     errors->push_back("either --check or --eval can be used, not both");
-  }
-
-  if (http_parser != "legacy" && http_parser != "llhttp") {
-    errors->push_back("invalid value for --http-parser");
   }
 
   if (!unhandled_rejections.empty() &&
@@ -231,6 +235,17 @@ class PerProcessOptionsParser : public OptionsParser<PerProcessOptions> {
 #if HAVE_INSPECTOR
 const DebugOptionsParser _dop_instance{};
 const EnvironmentOptionsParser _eop_instance{_dop_instance};
+
+// This Parse is not dead code. It is used by embedders (e.g., Electron).
+template <>
+void Parse(
+  StringVector* const args, StringVector* const exec_args,
+  StringVector* const v8_args,
+  DebugOptions* const options,
+  OptionEnvvarSettings required_env_settings, StringVector* const errors) {
+  _dop_instance.Parse(
+    args, exec_args, v8_args, options, required_env_settings, errors);
+}
 #else
 const EnvironmentOptionsParser _eop_instance{};
 #endif  // HAVE_INSPECTOR
@@ -275,7 +290,9 @@ DebugOptionsParser::DebugOptionsParser() {
   AddAlias("--inspect=", { "--inspect-port", "--inspect" });
 
   AddOption("--debug", "", &DebugOptions::deprecated_debug);
-  AddAlias("--debug=", { "--inspect-port", "--debug" });
+  AddAlias("--debug=", "--debug");
+  AddOption("--debug-brk", "", &DebugOptions::deprecated_debug);
+  AddAlias("--debug-brk=", "--debug-brk");
 
   AddOption("--inspect-brk",
             "activate inspector on host:port and break at start of user script",
@@ -288,10 +305,6 @@ DebugOptionsParser::DebugOptionsParser() {
   Implies("--inspect-brk-node", "--inspect");
   AddAlias("--inspect-brk-node=", { "--inspect-port", "--inspect-brk-node" });
 
-  AddOption("--debug-brk", "", &DebugOptions::break_first_line);
-  Implies("--debug-brk", "--debug");
-  AddAlias("--debug-brk=", { "--inspect-port", "--debug-brk" });
-
   AddOption("--inspect-publish-uid",
             "comma separated list of destinations for inspector uid"
             "(default: stderr,http)",
@@ -300,6 +313,20 @@ DebugOptionsParser::DebugOptionsParser() {
 }
 
 EnvironmentOptionsParser::EnvironmentOptionsParser() {
+  AddOption("--enable-source-maps",
+            "experimental Source Map V3 support",
+            &EnvironmentOptions::enable_source_maps,
+            kAllowedInEnvironment);
+  AddOption("--experimental-json-modules",
+            "experimental JSON interop support for the ES Module loader",
+            &EnvironmentOptions::experimental_json_modules,
+            kAllowedInEnvironment);
+  AddOption("--experimental-loader",
+            "(with --experimental-modules) use the specified file as a "
+            "custom loader",
+            &EnvironmentOptions::userland_loader,
+            kAllowedInEnvironment);
+  AddAlias("--loader", "--experimental-loader");
   AddOption("--experimental-modules",
             "experimental ES Module support and caching modules",
             &EnvironmentOptions::experimental_modules,
@@ -313,6 +340,15 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "security policy",
             &EnvironmentOptions::experimental_policy,
             kAllowedInEnvironment);
+  AddOption("[has_policy_integrity_string]",
+            "",
+            &EnvironmentOptions::has_policy_integrity_string);
+  AddOption("--policy-integrity",
+            "ensure the security policy contents match "
+            "the specified integrity",
+            &EnvironmentOptions::experimental_policy_integrity,
+            kAllowedInEnvironment);
+  Implies("--policy-integrity", "[has_policy_integrity_string]");
   AddOption("--experimental-repl-await",
             "experimental await keyword support in REPL",
             &EnvironmentOptions::experimental_repl_await,
@@ -337,19 +373,10 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "Generate heap snapshot on specified signal",
             &EnvironmentOptions::heap_snapshot_signal,
             kAllowedInEnvironment);
-  AddOption("--http-parser",
-            "Select which HTTP parser to use; either 'legacy' or 'llhttp' "
-            "(default: llhttp).",
-            &EnvironmentOptions::http_parser,
-            kAllowedInEnvironment);
+  AddOption("--http-parser", "", NoOp{}, kAllowedInEnvironment);
   AddOption("--input-type",
             "set module type for string input",
             &EnvironmentOptions::module_type,
-            kAllowedInEnvironment);
-  AddOption("--loader",
-            "(with --experimental-modules) use the specified file as a "
-            "custom loader",
-            &EnvironmentOptions::userland_loader,
             kAllowedInEnvironment);
   AddOption("--es-module-specifier-resolution",
             "Select extension resolution algorithm for es modules; "
@@ -367,6 +394,10 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
   AddOption("--no-warnings",
             "silence all process warnings",
             &EnvironmentOptions::no_warnings,
+            kAllowedInEnvironment);
+  AddOption("--force-context-aware",
+            "disable loading non-context-aware addons",
+            &EnvironmentOptions::force_context_aware,
             kAllowedInEnvironment);
   AddOption("--pending-deprecation",
             "emit pending deprecation warnings",
@@ -426,6 +457,8 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             "write warnings to file instead of stderr",
             &EnvironmentOptions::redirect_warnings,
             kAllowedInEnvironment);
+  AddOption("--test-udp-no-try-send", "",  // For testing only.
+            &EnvironmentOptions::test_udp_no_try_send);
   AddOption("--throw-deprecation",
             "throw an exception on deprecations",
             &EnvironmentOptions::throw_deprecation,
@@ -522,6 +555,10 @@ PerIsolateOptionsParser::PerIsolateOptionsParser(
             "track heap object allocations for heap snapshots",
             &PerIsolateOptions::track_heap_objects,
             kAllowedInEnvironment);
+  AddOption("--no-node-snapshot",
+            "",  // It's a debug-only option.
+            &PerIsolateOptions::no_node_snapshot,
+            kAllowedInEnvironment);
 
   // Explicitly add some V8 flags to mark them as allowed in NODE_OPTIONS.
   AddOption("--abort-on-uncaught-exception",
@@ -529,6 +566,9 @@ PerIsolateOptionsParser::PerIsolateOptionsParser(
             "for analysis",
             V8Option{},
             kAllowedInEnvironment);
+  AddOption("--interpreted-frames-native-stack",
+            "help system profilers to translate JavaScript interpreted frames",
+            V8Option{}, kAllowedInEnvironment);
   AddOption("--max-old-space-size", "", V8Option{}, kAllowedInEnvironment);
   AddOption("--perf-basic-prof", "", V8Option{}, kAllowedInEnvironment);
   AddOption("--perf-basic-prof-only-functions",
@@ -611,7 +651,12 @@ PerProcessOptionsParser::PerProcessOptionsParser(
             &PerProcessOptions::debug_arraybuffer_allocations,
             kAllowedInEnvironment);
 
-  AddOption("--security-reverts", "", &PerProcessOptions::security_reverts);
+
+  // 12.x renamed this inadvertently, so alias it for consistency within the
+  // release line, while using the original name for consistency with older
+  // release lines.
+  AddOption("--security-revert", "", &PerProcessOptions::security_reverts);
+  AddAlias("--security-reverts", "--security-revert");
   AddOption("--completion-bash",
             "print source-able bash completion script",
             &PerProcessOptions::print_bash_completion);

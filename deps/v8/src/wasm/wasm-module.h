@@ -7,9 +7,10 @@
 
 #include <memory>
 
-#include "src/globals.h"
-#include "src/handles.h"
-#include "src/vector.h"
+#include "src/base/optional.h"
+#include "src/common/globals.h"
+#include "src/handles/handles.h"
+#include "src/utils/vector.h"
 #include "src/wasm/signature-map.h"
 #include "src/wasm/wasm-constants.h"
 #include "src/wasm/wasm-opcodes.h"
@@ -147,6 +148,7 @@ enum class WasmCompilationHintStrategy : uint8_t {
   kDefault = 0,
   kLazy = 1,
   kEager = 2,
+  kLazyBaselineEagerTopTier = 3,
 };
 
 enum class WasmCompilationHintTier : uint8_t {
@@ -163,7 +165,11 @@ struct WasmCompilationHint {
   WasmCompilationHintTier top_tier;
 };
 
-enum ModuleOrigin : uint8_t { kWasmOrigin, kAsmJsOrigin };
+enum ModuleOrigin : uint8_t {
+  kWasmOrigin,
+  kAsmJsSloppyOrigin,
+  kAsmJsStrictOrigin
+};
 
 #define SELECT_WASM_COUNTER(counters, origin, prefix, suffix)     \
   ((origin) == kWasmOrigin ? (counters)->prefix##_wasm_##suffix() \
@@ -195,7 +201,6 @@ struct V8_EXPORT_PRIVATE WasmModule {
   uint32_t num_declared_functions = 0;  // excluding imported
   uint32_t num_exported_functions = 0;
   uint32_t num_declared_data_segments = 0;  // From the DataCount section.
-  uint32_t num_lazy_compilation_hints = 0;  // From compilation hints section.
   WireBytesRef name = {0, 0};
   std::vector<FunctionSig*> signatures;  // by signature index
   std::vector<uint32_t> signature_ids;   // by signature index
@@ -221,7 +226,19 @@ struct V8_EXPORT_PRIVATE WasmModule {
   void AddFunctionNameForTesting(int function_index, WireBytesRef name);
 };
 
+inline bool is_asmjs_module(const WasmModule* module) {
+  return module->origin != kWasmOrigin;
+}
+
 size_t EstimateStoredSize(const WasmModule* module);
+
+// Returns the number of possible export wrappers for a given module.
+V8_EXPORT_PRIVATE int MaxNumExportWrappers(const WasmModule* module);
+
+// Returns the wrapper index for a function in {module} with signature {sig}
+// and origin defined by {is_import}.
+int GetExportWrapperIndex(const WasmModule* module, const FunctionSig* sig,
+                          bool is_import);
 
 // Interface to the storage (wire bytes) of a wasm module.
 // It is illegal for anyone receiving a ModuleWireBytes to store pointers based
@@ -254,7 +271,7 @@ struct V8_EXPORT_PRIVATE ModuleWireBytes {
   }
 
   Vector<const byte> module_bytes() const { return module_bytes_; }
-  const byte* start() const { return module_bytes_.start(); }
+  const byte* start() const { return module_bytes_.begin(); }
   const byte* end() const { return module_bytes_.end(); }
   size_t length() const { return module_bytes_.length(); }
 
@@ -285,13 +302,19 @@ V8_EXPORT_PRIVATE MaybeHandle<WasmModuleObject> CreateModuleObjectFromBytes(
 V8_EXPORT_PRIVATE bool IsWasmCodegenAllowed(Isolate* isolate,
                                             Handle<Context> context);
 
-V8_EXPORT_PRIVATE Handle<JSArray> GetImports(Isolate* isolate,
-                                             Handle<WasmModuleObject> module);
-V8_EXPORT_PRIVATE Handle<JSArray> GetExports(Isolate* isolate,
-                                             Handle<WasmModuleObject> module);
-V8_EXPORT_PRIVATE Handle<JSArray> GetCustomSections(
-    Isolate* isolate, Handle<WasmModuleObject> module, Handle<String> name,
-    ErrorThrower* thrower);
+Handle<JSObject> GetTypeForFunction(Isolate* isolate, FunctionSig* sig);
+Handle<JSObject> GetTypeForGlobal(Isolate* isolate, bool is_mutable,
+                                  ValueType type);
+Handle<JSObject> GetTypeForMemory(Isolate* isolate, uint32_t min_size,
+                                  base::Optional<uint32_t> max_size);
+Handle<JSObject> GetTypeForTable(Isolate* isolate, ValueType type,
+                                 uint32_t min_size,
+                                 base::Optional<uint32_t> max_size);
+Handle<JSArray> GetImports(Isolate* isolate, Handle<WasmModuleObject> module);
+Handle<JSArray> GetExports(Isolate* isolate, Handle<WasmModuleObject> module);
+Handle<JSArray> GetCustomSections(Isolate* isolate,
+                                  Handle<WasmModuleObject> module,
+                                  Handle<String> name, ErrorThrower* thrower);
 
 // Decode local variable names from the names section. Return FixedArray of
 // FixedArray of <undefined|String>. The outer fixed array is indexed by the
@@ -310,7 +333,7 @@ class TruncatedUserString {
  public:
   template <typename T>
   explicit TruncatedUserString(Vector<T> name)
-      : TruncatedUserString(name.start(), name.length()) {}
+      : TruncatedUserString(name.begin(), name.length()) {}
 
   TruncatedUserString(const byte* start, size_t len)
       : TruncatedUserString(reinterpret_cast<const char*>(start), len) {}

@@ -7,11 +7,18 @@ from __future__ import print_function
 
 import json
 import os
+import platform
+import subprocess
 import sys
 import time
 
 from . import base
 from ..local import junit_output
+
+
+# Base dir of the build products for Release and Debug.
+OUT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..', '..', 'out'))
 
 
 def print_failure_header(test):
@@ -50,8 +57,15 @@ class ResultsTracker(base.TestProcObserver):
 
 
 class ProgressIndicator(base.TestProcObserver):
+  def __init__(self):
+    super(base.TestProcObserver, self).__init__()
+    self.options = None
+
   def finished(self):
     pass
+
+  def configure(self, options):
+    self.options = options
 
 
 class SimpleProgressIndicator(ProgressIndicator):
@@ -107,8 +121,7 @@ class VerboseProgressIndicator(SimpleProgressIndicator):
     sys.stdout.flush()
     self._last_printed_time = time.time()
 
-  def _on_result_for(self, test, result):
-    super(VerboseProgressIndicator, self)._on_result_for(test, result)
+  def _message(self, test, result):
     # TODO(majeski): Support for dummy/grouped results
     if result.has_unexpected_output:
       if result.output.HasCrashed():
@@ -117,15 +130,46 @@ class VerboseProgressIndicator(SimpleProgressIndicator):
         outcome = 'FAIL'
     else:
       outcome = 'pass'
+    return 'Done running %s %s: %s' % (
+      test, test.variant or 'default', outcome)
 
-    self._print('Done running %s %s: %s' % (
-      test, test.variant or 'default', outcome))
+  def _on_result_for(self, test, result):
+    super(VerboseProgressIndicator, self)._on_result_for(test, result)
+    self._print(self._message(test, result))
+
+  # TODO(machenbach): Remove this platform specific hack and implement a proper
+  # feedback channel from the workers, providing which tests are currently run.
+  def _print_processes_linux(self):
+    if platform.system() == 'Linux':
+      try:
+        cmd = 'ps -aux | grep "%s"' % OUT_DIR
+        output = subprocess.check_output(cmd, shell=True)
+        self._print('List of processes:')
+        for line in (output or '').splitlines():
+          # Show command with pid, but other process info cut off.
+          self._print('pid: %s cmd: %s' %
+                      (line.split()[1], line[line.index(OUT_DIR):]))
+      except:
+        pass
 
   def _on_heartbeat(self):
     if time.time() - self._last_printed_time > 30:
       # Print something every 30 seconds to not get killed by an output
       # timeout.
       self._print('Still working...')
+      self._print_processes_linux()
+
+  def _on_event(self, event):
+    self._print(event)
+    self._print_processes_linux()
+
+
+class CIProgressIndicator(VerboseProgressIndicator):
+  def _on_result_for(self, test, result):
+    super(VerboseProgressIndicator, self)._on_result_for(test, result)
+    if self.options.ci_test_completion:
+      with open(self.options.ci_test_completion, "a") as f:
+        f.write(self._message(test, result) + "\n")
 
 
 class DotsProgressIndicator(SimpleProgressIndicator):

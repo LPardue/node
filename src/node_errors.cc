@@ -324,6 +324,8 @@ static void ReportFatalException(Environment* env,
         break;
       }
       case EnhanceFatalException::kDontEnhance: {
+        USE(err_obj->Get(env->context(), env->stack_string())
+                .ToLocal(&stack_trace));
         report_to_inspector();
         break;
       }
@@ -448,10 +450,11 @@ TryCatchScope::~TryCatchScope() {
     HandleScope scope(env_->isolate());
     Local<v8::Value> exception = Exception();
     Local<v8::Message> message = Message();
+    EnhanceFatalException enhance = CanContinue() ?
+        EnhanceFatalException::kEnhance : EnhanceFatalException::kDontEnhance;
     if (message.IsEmpty())
       message = Exception::CreateMessage(env_->isolate(), exception);
-    ReportFatalException(
-        env_, exception, message, EnhanceFatalException::kDontEnhance);
+    ReportFatalException(env_, exception, message, enhance);
     env_->Exit(7);
   }
 }
@@ -977,6 +980,9 @@ void TriggerUncaughtException(Isolate* isolate,
 
   // Now we are certain that the exception is fatal.
   ReportFatalException(env, error, message, EnhanceFatalException::kEnhance);
+#if HAVE_INSPECTOR
+  profiler::EndStartedProfilers(env);
+#endif
 
   // If the global uncaught exception handler sets process.exitCode,
   // exit with that code. Otherwise, exit with 1.

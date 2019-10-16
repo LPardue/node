@@ -3,6 +3,9 @@
 #include "node_options-inl.h"
 #include "node_v8_platform-inl.h"
 #include "util-inl.h"
+#if defined(LEAK_SANITIZER)
+#include <sanitizer/lsan_interface.h>
+#endif
 
 namespace node {
 
@@ -30,13 +33,14 @@ NodeMainInstance::NodeMainInstance(Isolate* isolate,
   SetIsolateUpForNode(isolate_, IsolateSettingCategories::kMisc);
 }
 
-NodeMainInstance* NodeMainInstance::Create(
+std::unique_ptr<NodeMainInstance> NodeMainInstance::Create(
     Isolate* isolate,
     uv_loop_t* event_loop,
     MultiIsolatePlatform* platform,
     const std::vector<std::string>& args,
     const std::vector<std::string>& exec_args) {
-  return new NodeMainInstance(isolate, event_loop, platform, args, exec_args);
+  return std::unique_ptr<NodeMainInstance>(
+      new NodeMainInstance(isolate, event_loop, platform, args, exec_args));
 }
 
 NodeMainInstance::NodeMainInstance(
@@ -81,7 +85,6 @@ NodeMainInstance::NodeMainInstance(
 void NodeMainInstance::Dispose() {
   CHECK(!owns_isolate_);
   platform_->DrainTasks(isolate_);
-  delete this;
 }
 
 NodeMainInstance::~NodeMainInstance() {
@@ -110,6 +113,8 @@ int NodeMainInstance::Run() {
       LoadEnvironment(env.get());
       env->async_hooks()->pop_async_id(1);
     }
+
+    env->set_trace_sync_io(env->options()->trace_sync_io);
 
     {
       SealHandleScope seal(isolate_);
@@ -177,6 +182,7 @@ std::unique_ptr<Environment> NodeMainInstance::CreateMainEnvironment(
   if (deserialize_mode_) {
     context =
         Context::FromSnapshot(isolate_, kNodeContextIndex).ToLocalChecked();
+    InitializeContextRuntime(context);
     SetIsolateUpForNode(isolate_, IsolateSettingCategories::kErrorHandlers);
   } else {
     context = NewContext(isolate_);

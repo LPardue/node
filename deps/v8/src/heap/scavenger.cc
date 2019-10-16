@@ -8,16 +8,17 @@
 #include "src/heap/barrier.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/heap-inl.h"
+#include "src/heap/invalidated-slots-inl.h"
 #include "src/heap/item-parallel-job.h"
 #include "src/heap/mark-compact-inl.h"
 #include "src/heap/objects-visiting-inl.h"
 #include "src/heap/scavenger-inl.h"
 #include "src/heap/sweeper.h"
-#include "src/objects-body-descriptors-inl.h"
 #include "src/objects/data-handler-inl.h"
 #include "src/objects/embedder-data-array-inl.h"
-#include "src/transitions-inl.h"
-#include "src/utils-inl.h"
+#include "src/objects/objects-body-descriptors-inl.h"
+#include "src/objects/transitions-inl.h"
+#include "src/utils/utils-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -41,10 +42,20 @@ class ScavengingTask final : public ItemParallelJob::Task {
         scavenger_(scavenger),
         barrier_(barrier) {}
 
-  void RunInParallel() final {
-    TRACE_BACKGROUND_GC(
-        heap_->tracer(),
-        GCTracer::BackgroundScope::SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL);
+  void RunInParallel(Runner runner) final {
+    if (runner == Runner::kForeground) {
+      TRACE_GC(heap_->tracer(), GCTracer::Scope::SCAVENGER_SCAVENGE_PARALLEL);
+      ProcessItems();
+    } else {
+      TRACE_BACKGROUND_GC(
+          heap_->tracer(),
+          GCTracer::BackgroundScope::SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL);
+      ProcessItems();
+    }
+  }
+
+ private:
+  void ProcessItems() {
     double scavenging_time = 0.0;
     {
       barrier_->Start();
@@ -66,8 +77,6 @@ class ScavengingTask final : public ItemParallelJob::Task {
                    scavenger_->bytes_copied(), scavenger_->bytes_promoted());
     }
   }
-
- private:
   Heap* const heap_;
   Scavenger* const scavenger_;
   OneshotBarrier* const barrier_;
@@ -100,7 +109,7 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
 
   inline void VisitEphemeron(HeapObject obj, int entry, ObjectSlot key,
                              ObjectSlot value) override {
-    DCHECK(Heap::IsLargeObject(obj) || obj->IsEphemeronHashTable());
+    DCHECK(Heap::IsLargeObject(obj) || obj.IsEphemeronHashTable());
     VisitPointer(obj, value);
 
     if (ObjectInYoungGeneration(*key)) {
@@ -143,7 +152,7 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
       DCHECK(success);
 
       if (result == KEEP_SLOT) {
-        SLOW_DCHECK(target->IsHeapObject());
+        SLOW_DCHECK(target.IsHeapObject());
         RememberedSet<OLD_TO_NEW>::Insert(MemoryChunk::FromHeapObject(host),
                                           slot.address());
       }
@@ -169,13 +178,13 @@ namespace {
 
 V8_INLINE bool IsUnscavengedHeapObject(Heap* heap, Object object) {
   return Heap::InFromPage(object) &&
-         !HeapObject::cast(object)->map_word().IsForwardingAddress();
+         !HeapObject::cast(object).map_word().IsForwardingAddress();
 }
 
 // Same as IsUnscavengedHeapObject() above but specialized for HeapObjects.
 V8_INLINE bool IsUnscavengedHeapObject(Heap* heap, HeapObject heap_object) {
   return Heap::InFromPage(heap_object) &&
-         !heap_object->map_word().IsForwardingAddress();
+         !heap_object.map_word().IsForwardingAddress();
 }
 
 bool IsUnscavengedHeapObjectSlot(Heap* heap, FullObjectSlot p) {
@@ -191,7 +200,7 @@ class ScavengeWeakObjectRetainer : public WeakObjectRetainer {
       return object;
     }
 
-    MapWord map_word = HeapObject::cast(object)->map_word();
+    MapWord map_word = HeapObject::cast(object).map_word();
     if (map_word.IsForwardingAddress()) {
       return map_word.ToForwardingAddress();
     }
@@ -344,7 +353,7 @@ void ScavengerCollector::HandleSurvivingNewLargeObjects() {
     Map map = update_info.second;
     // Order is important here. We have to re-install the map to have access
     // to meta-data like size during page promotion.
-    object->set_map_word(MapWord::FromMap(map));
+    object.set_map_word(MapWord::FromMap(map));
     LargePage* page = LargePage::FromHeapObject(object);
     heap_->lo_space()->PromoteNewLargeObject(page);
   }
@@ -363,7 +372,7 @@ void ScavengerCollector::MergeSurvivingNewLargeObjects(
 int ScavengerCollector::NumberOfScavengeTasks() {
   if (!FLAG_parallel_scavenge) return 1;
   const int num_scavenge_tasks =
-      static_cast<int>(heap_->new_space()->TotalCapacity()) / MB;
+      static_cast<int>(heap_->new_space()->TotalCapacity()) / MB + 1;
   static int num_cores = V8::GetCurrentPlatform()->NumberOfWorkerThreads() + 1;
   int tasks =
       Max(1, Min(Min(num_scavenge_tasks, kMaxScavengerTasks), num_cores));
@@ -403,7 +412,7 @@ void Scavenger::IterateAndScavengePromotedObject(HeapObject target, Map map,
       is_compacting_ &&
       heap()->incremental_marking()->atomic_marking_state()->IsBlack(target);
   IterateAndScavengePromotedObjectsVisitor visitor(this, record_slots);
-  target->IterateBodyFast(map, size, &visitor);
+  target.IterateBodyFast(map, size, &visitor);
 }
 
 void Scavenger::RememberPromotedEphemeron(EphemeronHashTable table, int entry) {
@@ -413,7 +422,7 @@ void Scavenger::RememberPromotedEphemeron(EphemeronHashTable table, int entry) {
 }
 
 void Scavenger::AddPageToSweeperIfNecessary(MemoryChunk* page) {
-  AllocationSpace space = page->owner()->identity();
+  AllocationSpace space = page->owner_identity();
   if ((space == OLD_SPACE) && !page->SweepingDone()) {
     heap()->mark_compact_collector()->sweeper()->AddPage(
         space, reinterpret_cast<Page*>(page),
@@ -423,12 +432,15 @@ void Scavenger::AddPageToSweeperIfNecessary(MemoryChunk* page) {
 
 void Scavenger::ScavengePage(MemoryChunk* page) {
   CodePageMemoryModificationScope memory_modification_scope(page);
-  RememberedSet<OLD_TO_NEW>::Iterate(page,
-                                     [this](MaybeObjectSlot addr) {
-                                       return CheckAndScavengeObject(heap_,
-                                                                     addr);
-                                     },
-                                     SlotSet::KEEP_EMPTY_BUCKETS);
+  RememberedSet<OLD_TO_NEW>::Iterate(
+      page,
+      [this](MaybeObjectSlot addr) {
+        return CheckAndScavengeObject(heap_, addr);
+      },
+      SlotSet::KEEP_EMPTY_BUCKETS);
+
+  DCHECK_NULL(page->invalidated_slots<OLD_TO_NEW>());
+
   RememberedSet<OLD_TO_NEW>::IterateTyped(
       page, [=](SlotType type, Address addr) {
         return UpdateTypedSlotHelper::UpdateTypedSlot(
@@ -463,7 +475,6 @@ void Scavenger::Process(OneshotBarrier* barrier) {
     struct PromotionListEntry entry;
     while (promotion_list_.Pop(&entry)) {
       HeapObject target = entry.heap_object;
-      DCHECK(!target->IsMap());
       IterateAndScavengePromotedObject(target, entry.map, entry.size);
       done = false;
       if (have_barrier && ((++objects % kInterruptThreshold) == 0)) {
@@ -488,13 +499,13 @@ void ScavengerCollector::ProcessWeakReferences(
 void ScavengerCollector::ClearYoungEphemerons(
     EphemeronTableList* ephemeron_table_list) {
   ephemeron_table_list->Iterate([this](EphemeronHashTable table) {
-    for (int i = 0; i < table->Capacity(); i++) {
+    for (int i = 0; i < table.Capacity(); i++) {
       // Keys in EphemeronHashTables must be heap objects.
       HeapObjectSlot key_slot(
-          table->RawFieldOfElementAt(EphemeronHashTable::EntryToIndex(i)));
+          table.RawFieldOfElementAt(EphemeronHashTable::EntryToIndex(i)));
       HeapObject key = key_slot.ToHeapObject();
       if (IsUnscavengedHeapObject(heap_, key)) {
-        table->RemoveEntry(i);
+        table.RemoveEntry(i);
       } else {
         HeapObject forwarded = ForwardingAddress(key);
         key_slot.StoreHeapObject(forwarded);
@@ -514,10 +525,10 @@ void ScavengerCollector::ClearOldEphemerons() {
     for (auto iti = indices.begin(); iti != indices.end();) {
       // Keys in EphemeronHashTables must be heap objects.
       HeapObjectSlot key_slot(
-          table->RawFieldOfElementAt(EphemeronHashTable::EntryToIndex(*iti)));
+          table.RawFieldOfElementAt(EphemeronHashTable::EntryToIndex(*iti)));
       HeapObject key = key_slot.ToHeapObject();
       if (IsUnscavengedHeapObject(heap_, key)) {
-        table->RemoveEntry(*iti);
+        table.RemoveEntry(*iti);
         iti = indices.erase(iti);
       } else {
         HeapObject forwarded = ForwardingAddress(key);

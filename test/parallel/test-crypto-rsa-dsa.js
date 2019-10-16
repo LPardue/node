@@ -154,7 +154,7 @@ const decryptError = {
   }, decryptError);
 }
 
-function test_rsa(padding) {
+function test_rsa(padding, encryptOaepHash, decryptOaepHash) {
   const size = (padding === 'RSA_NO_PADDING') ? rsaKeySize / 8 : 32;
   const input = Buffer.allocUnsafe(size);
   for (let i = 0; i < input.length; i++)
@@ -165,18 +165,21 @@ function test_rsa(padding) {
 
   const encryptedBuffer = crypto.publicEncrypt({
     key: rsaPubPem,
-    padding: padding
+    padding: padding,
+    oaepHash: encryptOaepHash
   }, bufferToEncrypt);
 
   let decryptedBuffer = crypto.privateDecrypt({
     key: rsaKeyPem,
-    padding: padding
+    padding: padding,
+    oaepHash: decryptOaepHash
   }, encryptedBuffer);
   assert.deepStrictEqual(decryptedBuffer, input);
 
   decryptedBuffer = crypto.privateDecrypt({
     key: rsaPkcs8KeyPem,
-    padding: padding
+    padding: padding,
+    oaepHash: decryptOaepHash
   }, encryptedBuffer);
   assert.deepStrictEqual(decryptedBuffer, input);
 }
@@ -184,6 +187,68 @@ function test_rsa(padding) {
 test_rsa('RSA_NO_PADDING');
 test_rsa('RSA_PKCS1_PADDING');
 test_rsa('RSA_PKCS1_OAEP_PADDING');
+
+// Test OAEP with different hash functions.
+test_rsa('RSA_PKCS1_OAEP_PADDING', undefined, 'sha1');
+test_rsa('RSA_PKCS1_OAEP_PADDING', 'sha1', undefined);
+test_rsa('RSA_PKCS1_OAEP_PADDING', 'sha256', 'sha256');
+test_rsa('RSA_PKCS1_OAEP_PADDING', 'sha512', 'sha512');
+common.expectsError(() => {
+  test_rsa('RSA_PKCS1_OAEP_PADDING', 'sha256', 'sha512');
+}, {
+  code: 'ERR_OSSL_RSA_OAEP_DECODING_ERROR'
+});
+
+// The following RSA-OAEP test cases were created using the WebCrypto API to
+// ensure compatibility when using non-SHA1 hash functions.
+{
+  const { decryptionTests } =
+      JSON.parse(fixtures.readSync('rsa-oaep-test-vectors.js', 'utf8'));
+
+  for (const { ct, oaepHash, oaepLabel } of decryptionTests) {
+    const decrypted = crypto.privateDecrypt({
+      key: rsaPkcs8KeyPem,
+      oaepHash,
+      oaepLabel: oaepLabel ? Buffer.from(oaepLabel, 'hex') : undefined
+    }, Buffer.from(ct, 'hex'));
+
+    assert.strictEqual(decrypted.toString('utf8'), 'Hello Node.js');
+  }
+}
+
+// Test invalid oaepHash and oaepLabel options.
+for (const fn of [crypto.publicEncrypt, crypto.privateDecrypt]) {
+  assert.throws(() => {
+    fn({
+      key: rsaPubPem,
+      oaepHash: 'Hello world'
+    }, Buffer.alloc(10));
+  }, {
+    code: 'ERR_OSSL_EVP_INVALID_DIGEST'
+  });
+
+  for (const oaepHash of [0, false, null, Symbol(), () => {}]) {
+    common.expectsError(() => {
+      fn({
+        key: rsaPubPem,
+        oaepHash
+      }, Buffer.alloc(10));
+    }, {
+      code: 'ERR_INVALID_ARG_TYPE'
+    });
+  }
+
+  for (const oaepLabel of [0, false, null, Symbol(), () => {}, {}, 'foo']) {
+    common.expectsError(() => {
+      fn({
+        key: rsaPubPem,
+        oaepLabel
+      }, Buffer.alloc(10));
+    }, {
+      code: 'ERR_INVALID_ARG_TYPE'
+    });
+  }
+}
 
 // Test RSA key signing/verification
 let rsaSign = crypto.createSign('SHA1');

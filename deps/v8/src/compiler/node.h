@@ -5,10 +5,10 @@
 #ifndef V8_COMPILER_NODE_H_
 #define V8_COMPILER_NODE_H_
 
+#include "src/common/globals.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
 #include "src/compiler/types.h"
-#include "src/globals.h"
 #include "src/zone/zone-containers.h"
 
 namespace v8 {
@@ -201,9 +201,7 @@ class V8_EXPORT_PRIVATE Node final {
     }
 
     using InlineField = BitField<bool, 0, 1>;
-    using InputIndexField = BitField<unsigned, 1, 17>;
-    // Leaving some space in the bitset in case we ever decide to record
-    // the output index.
+    using InputIndexField = BitField<unsigned, 1, 31>;
   };
 
   //============================================================================
@@ -291,7 +289,6 @@ class V8_EXPORT_PRIVATE Node final {
   using InlineCountField = BitField<unsigned, 24, 4>;
   using InlineCapacityField = BitField<unsigned, 28, 4>;
   static const int kOutlineMarker = InlineCountField::kMax;
-  static const int kMaxInlineCount = InlineCountField::kMax - 1;
   static const int kMaxInlineCapacity = InlineCapacityField::kMax - 1;
 
   const Operator* op_;

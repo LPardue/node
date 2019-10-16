@@ -29,7 +29,6 @@
   * [Avoid throwing JavaScript errors in C++ methods](#avoid-throwing-javascript-errors-in-c)
     * [Avoid throwing JavaScript errors in nested C++ methods](#avoid-throwing-javascript-errors-in-nested-c-methods)
 
-
 ## Guides and References
 
 The Node.js C++ codebase strives to be consistent in its use of language
@@ -37,6 +36,7 @@ features and idioms, as well as have some specific guidelines for the use of
 runtime features.
 
 Coding guidelines are based on the following guides (highest priority first):
+
 1. This document
 2. The [Google C++ Style Guide][]
 3. The ISO [C++ Core Guidelines][]
@@ -186,12 +186,13 @@ class FancyContainer {
  ...
 }
 ```
+
 ## Memory Management
 
 ### Memory allocation
 
-- `Malloc()`, `Calloc()`, etc. from `util.h` abort in Out-of-Memory situations
-- `UncheckedMalloc()`, etc. return `nullptr` in OOM situations
+* `Malloc()`, `Calloc()`, etc. from `util.h` abort in Out-of-Memory situations
+* `UncheckedMalloc()`, etc. return `nullptr` in OOM situations
 
 ### Use `nullptr` instead of `NULL` or `0`
 
@@ -205,8 +206,8 @@ Use explicit comparisons to `nullptr` when testing pointers, i.e.
 
 ### Ownership and Smart Pointers
 
-* [R.20]: Use `std::unique_ptr` or `std::shared_ptr` to represent ownership
-* [R.21]: Prefer `unique_ptr` over `shared_ptr` unless you need to share
+* [R.20][]: Use `std::unique_ptr` or `std::shared_ptr` to represent ownership
+* [R.21][]: Prefer `unique_ptr` over `shared_ptr` unless you need to share
   ownership
 
 Use `std::unique_ptr` to make ownership transfer explicit. For example:
@@ -277,15 +278,16 @@ data[0] = 12345;
 
 ### Type casting
 
-- Use `static_cast<T>` if casting is required, and it is valid
-- Use `reinterpret_cast` only when it is necessary
-- Avoid C-style casts (`(type)value`)
-- `dynamic_cast` does not work because Node.js is built without
+* Use `static_cast<T>` if casting is required, and it is valid
+* Use `reinterpret_cast` only when it is necessary
+* Avoid C-style casts (`(type)value`)
+* `dynamic_cast` does not work because Node.js is built without
   [Run Time Type Information][]
 
 Further reading:
-* [ES.48]: Avoid casts
-* [ES.49]: If you must use a cast, use a named cast
+
+* [ES.48][]: Avoid casts
+* [ES.49][]: If you must use a cast, use a named cast
 
 ### Using `auto`
 
@@ -384,7 +386,6 @@ side effects.
 
 Node.js is built [without C++ exception handling][], so code using `throw` or
 even `try` and `catch` **will** break.
-
 
 [C++ Core Guidelines]: http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines
 [Google C++ Style Guide]: https://google.github.io/styleguide/cppguide.html

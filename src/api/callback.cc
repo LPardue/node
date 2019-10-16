@@ -12,6 +12,7 @@ using v8::HandleScope;
 using v8::Isolate;
 using v8::Local;
 using v8::MaybeLocal;
+using v8::MicrotasksScope;
 using v8::NewStringType;
 using v8::Object;
 using v8::String;
@@ -99,8 +100,11 @@ void InternalCallbackScope::Close() {
   TickInfo* tick_info = env_->tick_info();
 
   if (!env_->can_call_into_js()) return;
+
+  OnScopeLeave weakref_cleanup([&]() { env_->RunWeakRefCleanup(); });
+
   if (!tick_info->has_tick_scheduled()) {
-    env_->isolate()->RunMicrotasks();
+    MicrotasksScope::PerformCheckpoint(env_->isolate());
   }
 
   // Make sure the stack unwound properly. If there are nested MakeCallback's

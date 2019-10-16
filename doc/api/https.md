@@ -23,7 +23,7 @@ changes:
 An [`Agent`][] object for HTTPS similar to [`http.Agent`][]. See
 [`https.request()`][] for more information.
 
-### new Agent([options])
+### new Agent(\[options\])
 <!-- YAML
 changes:
   - version: v12.5.0
@@ -31,6 +31,7 @@ changes:
     description: do not automatically set servername if the target host was
                  specified using an IP address.
 -->
+
 * `options` {Object} Set of configurable options to set on the agent.
   Can have the same fields as for [`http.Agent(options)`][], and
   * `maxCachedSessions` {number} maximum number of TLS cached sessions.
@@ -42,20 +43,22 @@ changes:
     is specified using an IP address, in which case the default is `''` (no
     extension).
 
-    See [`Session Resumption`][] for infomation about TLS session reuse.
+    See [`Session Resumption`][] for information about TLS session reuse.
 
 ## Class: https.Server
 <!-- YAML
 added: v0.3.4
 -->
 
-This class is a subclass of `tls.Server` and emits events same as
-[`http.Server`][]. See [`http.Server`][] for more information.
+* Extends: {tls.Server}
 
-### server.close([callback])
+See [`http.Server`][] for more information.
+
+### server.close(\[callback\])
 <!-- YAML
 added: v0.1.90
 -->
+
 * `callback` {Function}
 * Returns: {https.Server}
 
@@ -65,7 +68,8 @@ See [`server.close()`][`http.close()`] from the HTTP module for details.
 <!-- YAML
 added: v11.3.0
 -->
-- {number} **Default:** `40000`
+
+* {number} **Default:** `40000`
 
 See [`http.Server#headersTimeout`][].
 
@@ -74,17 +78,17 @@ See [`http.Server#headersTimeout`][].
 Starts the HTTPS server listening for encrypted connections.
 This method is identical to [`server.listen()`][] from [`net.Server`][].
 
-
 ### server.maxHeadersCount
 
-- {number} **Default:** `2000`
+* {number} **Default:** `2000`
 
 See [`http.Server#maxHeadersCount`][].
 
-### server.setTimeout([msecs][, callback])
+### server.setTimeout(\[msecs\]\[, callback\])
 <!-- YAML
 added: v0.11.2
 -->
+
 * `msecs` {number} **Default:** `120000` (2 minutes)
 * `callback` {Function}
 * Returns: {https.Server}
@@ -95,7 +99,8 @@ See [`http.Server#setTimeout()`][].
 <!-- YAML
 added: v0.11.2
 -->
-- {number} **Default:** `120000` (2 minutes)
+
+* {number} **Default:** `120000` (2 minutes)
 
 See [`http.Server#timeout`][].
 
@@ -103,14 +108,16 @@ See [`http.Server#timeout`][].
 <!-- YAML
 added: v8.0.0
 -->
-- {number} **Default:** `5000` (5 seconds)
+
+* {number} **Default:** `5000` (5 seconds)
 
 See [`http.Server#keepAliveTimeout`][].
 
-## https.createServer([options][, requestListener])
+## https.createServer(\[options\]\[, requestListener\])
 <!-- YAML
 added: v0.3.4
 -->
+
 * `options` {Object} Accepts `options` from [`tls.createServer()`][],
  [`tls.createSecureContext()`][] and [`http.createServer()`][].
 * `requestListener` {Function} A listener to be added to the `'request'` event.
@@ -149,8 +156,8 @@ https.createServer(options, (req, res) => {
 }).listen(8000);
 ```
 
-## https.get(options[, callback])
-## https.get(url[, options][, callback])
+## https.get(options\[, callback\])
+## https.get(url\[, options\]\[, callback\])
 <!-- YAML
 added: v0.3.6
 changes:
@@ -162,6 +169,7 @@ changes:
     pr-url: https://github.com/nodejs/node/pull/10638
     description: The `options` parameter can be a WHATWG `URL` object.
 -->
+
 * `url` {string | URL}
 * `options` {Object | string | URL} Accepts the same `options` as
   [`https.request()`][], with the `method` always set to `GET`.
@@ -196,8 +204,8 @@ added: v0.5.9
 
 Global instance of [`https.Agent`][] for all HTTPS client requests.
 
-## https.request(options[, callback])
-## https.request(url[, options][, callback])
+## https.request(options\[, callback\])
+## https.request(url\[, options\]\[, callback\])
 <!-- YAML
 added: v0.3.6
 changes:
@@ -212,12 +220,13 @@ changes:
     pr-url: https://github.com/nodejs/node/pull/10638
     description: The `options` parameter can be a WHATWG `URL` object.
 -->
+
 * `url` {string | URL}
 * `options` {Object | string | URL} Accepts all `options` from
   [`http.request()`][], with some differences in default values:
-  - `protocol` **Default:** `'https:'`
-  - `port` **Default:** `443`
-  - `agent` **Default:** `https.globalAgent`
+  * `protocol` **Default:** `'https:'`
+  * `port` **Default:** `443`
+  * `agent` **Default:** `https.globalAgent`
 * `callback` {Function}
 
 Makes a request to a secure web server.
@@ -255,6 +264,7 @@ req.on('error', (e) => {
 });
 req.end();
 ```
+
 Example using options from [`tls.connect()`][]:
 
 ```js

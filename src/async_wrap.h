@@ -33,7 +33,9 @@ namespace node {
 
 #define NODE_ASYNC_NON_CRYPTO_PROVIDER_TYPES(V)                               \
   V(NONE)                                                                     \
+  V(DIRHANDLE)                                                                \
   V(DNSCHANNEL)                                                               \
+  V(ELDHISTOGRAM)                                                             \
   V(FILEHANDLE)                                                               \
   V(FILEHANDLECLOSEREQ)                                                       \
   V(FSEVENTWRAP)                                                              \
@@ -154,7 +156,7 @@ class AsyncWrap : public BaseObject {
   static void EmitTraceEventAfter(ProviderType type, double async_id);
   void EmitTraceEventDestroy();
 
-  static void DestroyAsyncIdsCallback(Environment* env, void* data);
+  static void DestroyAsyncIdsCallback(Environment* env);
 
   inline ProviderType provider_type() const;
   inline ProviderType set_provider_type(ProviderType provider);
@@ -210,6 +212,8 @@ class AsyncWrap : public BaseObject {
     AsyncWrap* wrap_ = nullptr;
   };
 
+  bool IsDoneInitializing() const override;
+
  private:
   friend class PromiseWrap;
 
@@ -218,7 +222,8 @@ class AsyncWrap : public BaseObject {
             ProviderType provider,
             double execution_async_id,
             bool silent);
-  ProviderType provider_type_;
+  ProviderType provider_type_ = PROVIDER_NONE;
+  bool init_hook_ran_ = false;
   // Because the values may be Reset(), cannot be made const.
   double async_id_ = kInvalidAsyncId;
   double trigger_async_id_;

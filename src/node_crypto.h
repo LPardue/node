@@ -97,6 +97,7 @@ class SecureContext : public BaseObject {
   X509Pointer issuer_;
 #ifndef OPENSSL_NO_ENGINE
   bool client_cert_engine_provided_ = false;
+  std::unique_ptr<ENGINE, std::function<void(ENGINE*)>> private_key_engine_;
 #endif  // !OPENSSL_NO_ENGINE
 
   static const int kMaxSessionSize = 10 * 1024;
@@ -119,12 +120,16 @@ class SecureContext : public BaseObject {
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Init(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetKey(const v8::FunctionCallbackInfo<v8::Value>& args);
+#ifndef OPENSSL_NO_ENGINE
+  static void SetEngineKey(const v8::FunctionCallbackInfo<v8::Value>& args);
+#endif  // !OPENSSL_NO_ENGINE
   static void SetCert(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void AddCACert(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void AddCRL(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void AddRootCerts(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetCipherSuites(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetCiphers(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void SetSigalgs(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetECDHCurve(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetDHParam(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetOptions(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -250,6 +255,7 @@ class SSLWrap {
   static void IsSessionReused(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void VerifyError(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetCipher(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void GetSharedSigalgs(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void EndParser(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void CertCbDone(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Renegotiate(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -585,7 +591,7 @@ class Hash : public BaseObject {
   SET_MEMORY_INFO_NAME(Hash)
   SET_SELF_SIZE(Hash)
 
-  bool HashInit(const char* hash_type);
+  bool HashInit(const EVP_MD* md, v8::Maybe<unsigned int> xof_md_len);
   bool HashUpdate(const char* data, int len);
 
  protected:
@@ -596,18 +602,21 @@ class Hash : public BaseObject {
   Hash(Environment* env, v8::Local<v8::Object> wrap)
       : BaseObject(env, wrap),
         mdctx_(nullptr),
-        md_len_(0) {
+        has_md_(false),
+        md_value_(nullptr) {
     MakeWeak();
   }
 
   ~Hash() override {
-    OPENSSL_cleanse(md_value_, md_len_);
+    if (md_value_ != nullptr)
+      OPENSSL_clear_free(md_value_, md_len_);
   }
 
  private:
   EVPMDPointer mdctx_;
-  unsigned char md_value_[EVP_MAX_MD_SIZE];
+  bool has_md_;
   unsigned int md_len_;
+  unsigned char* md_value_;
 };
 
 class SignBase : public BaseObject {
@@ -710,6 +719,9 @@ class PublicKeyCipher {
   static bool Cipher(Environment* env,
                      const ManagedEVPPKey& pkey,
                      int padding,
+                     const EVP_MD* digest,
+                     const void* oaep_label,
+                     size_t oaep_label_size,
                      const unsigned char* data,
                      int len,
                      AllocatedBuffer* out);

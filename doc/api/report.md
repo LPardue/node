@@ -53,7 +53,6 @@ is provided below for reference.
       "nghttp2": "1.34.0",
       "napi": "3",
       "llhttp": "1.0.1",
-      "http_parser": "2.8.0",
       "openssl": "1.1.0j"
     },
     "release": {
@@ -63,7 +62,7 @@ is provided below for reference.
     "osRelease": "3.10.0-862.el7.x86_64",
     "osVersion": "#1 SMP Wed Mar 21 18:14:51 EDT 2018",
     "osMachine": "x86_64",
-    "osCpus": [
+    "cpus": [
       {
         "model": "Intel(R) Core(TM) i7-6820HQ CPU @ 2.70GHz",
         "speed": 2700,
@@ -81,6 +80,16 @@ is provided below for reference.
         "sys": 50902570,
         "idle": 241732220,
         "irq": 0
+      }
+    ],
+    "networkInterfaces": [
+      {
+        "name": "en0",
+        "internal": false,
+        "mac": "13:10:de:ad:be:ef",
+        "address": "10.0.0.37",
+        "netmask": "255.255.255.0",
+        "family": "IPv4"
       }
     ],
     "host": "test_machine"
@@ -463,12 +472,15 @@ try {
 // Any other code
 ```
 
-The content of the diagnostic report can be returned as a JSON-compatible object
+The content of the diagnostic report can be returned as a JavaScript Object
 via an API call from a JavaScript application:
 
 ```js
 const report = process.report.getReport();
-console.log(report);
+console.log(typeof report === 'object'); // true
+
+// Similar to process.report.writeReport() output
+console.log(JSON.stringify(report, null, 2));
 ```
 
 This function takes an optional additional argument `err` - an `Error` object
@@ -476,7 +488,7 @@ that will be used as the context for the JavaScript stack printed in the report.
 
 ```js
 const report = process.report.getReport(new Error('custom error'));
-console.log(report);
+console.log(typeof report === 'object'); // true
 ```
 
 The API versions are useful when inspecting the runtime state from within
@@ -498,7 +510,7 @@ Node.js report completed
 >
 ```
 
-When a report is triggered, start and end messages are issued to stderr
+When a report is written, start and end messages are issued to stderr
 and the filename of the report is returned to the caller. The default filename
 includes the date, time, PID and a sequence number. The sequence number helps
 in associating the report dump with the runtime state if generated multiple

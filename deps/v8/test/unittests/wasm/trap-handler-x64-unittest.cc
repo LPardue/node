@@ -21,13 +21,13 @@
 #elif V8_OS_WIN
 #include "include/v8-wasm-trap-handler-win.h"
 #endif
-#include "src/allocation.h"
-#include "src/assembler-inl.h"
 #include "src/base/page-allocator.h"
-#include "src/macro-assembler-inl.h"
-#include "src/simulator.h"
+#include "src/codegen/assembler-inl.h"
+#include "src/codegen/macro-assembler-inl.h"
+#include "src/execution/simulator.h"
 #include "src/trap-handler/trap-handler.h"
-#include "src/vector.h"
+#include "src/utils/allocation.h"
+#include "src/utils/vector.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-memory.h"
 
@@ -465,7 +465,7 @@ TEST_P(TrapHandlerTest, TestCrashInOtherThread) {
   CHECK(!GetThreadInWasmFlag());
   // Set the thread-in-wasm flag manually in this thread.
   *trap_handler::GetThreadInWasmThreadLocalAddress() = 1;
-  runner.Start();
+  CHECK(runner.Start());
   runner.Join();
   CHECK(GetThreadInWasmFlag());
   // Reset the thread-in-wasm flag.

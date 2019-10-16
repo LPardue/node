@@ -186,7 +186,7 @@ inline static napi_status ConcludeDeferred(napi_env env,
 }
 
 // Wrapper around v8impl::Persistent that implements reference counting.
-class Reference : private Finalizer {
+class Reference : private Finalizer, RefTracker {
  private:
   Reference(napi_env env,
             v8::Local<v8::Value> value,
@@ -203,6 +203,9 @@ class Reference : private Finalizer {
       _persistent.SetWeak(
           this, FinalizeCallback, v8::WeakCallbackType::kParameter);
     }
+    Link(finalize_callback == nullptr
+        ? &env->reflist
+        : &env->finalizing_reflist);
   }
 
  public:
@@ -242,6 +245,7 @@ class Reference : private Finalizer {
   // the finalizer and _delete_self is set. In this case we
   // know we need to do the deletion so just do it.
   static void Delete(Reference* reference) {
+    reference->Unlink();
     if ((reference->RefCount() != 0) ||
         (reference->_delete_self) ||
         (reference->_finalize_ran)) {
@@ -286,6 +290,26 @@ class Reference : private Finalizer {
   }
 
  private:
+  void Finalize(bool is_env_teardown = false) override {
+    if (_finalize_callback != nullptr) {
+      _env->CallIntoModuleThrow([&](napi_env env) {
+        _finalize_callback(
+            env,
+            _finalize_data,
+            _finalize_hint);
+      });
+    }
+
+    // this is safe because if a request to delete the reference
+    // is made in the finalize_callback it will defer deletion
+    // to this block and set _delete_self to true
+    if (_delete_self || is_env_teardown) {
+      Delete(this);
+    } else {
+      _finalize_ran = true;
+    }
+  }
+
   // The N-API finalizer callback may make calls into the engine. V8's heap is
   // not in a consistent state during the weak callback, and therefore it does
   // not support calls back into it. However, it provides a mechanism for adding
@@ -303,27 +327,7 @@ class Reference : private Finalizer {
   }
 
   static void SecondPassCallback(const v8::WeakCallbackInfo<Reference>& data) {
-    Reference* reference = data.GetParameter();
-
-    napi_env env = reference->_env;
-
-    if (reference->_finalize_callback != nullptr) {
-      NapiCallIntoModuleThrow(env, [&]() {
-        reference->_finalize_callback(
-            reference->_env,
-            reference->_finalize_data,
-            reference->_finalize_hint);
-      });
-    }
-
-    // this is safe because if a request to delete the reference
-    // is made in the finalize_callback it will defer deletion
-    // to this block and set _delete_self to true
-    if (reference->_delete_self) {
-      Delete(reference);
-    } else {
-      reference->_finalize_ran = true;
-    }
+    data.GetParameter()->Finalize();
   }
 
   v8impl::Persistent<v8::Value> _persistent;
@@ -381,27 +385,10 @@ inline static napi_status Unwrap(napi_env env,
 // Ref: benchmark/misc/function_call
 // Discussion (incl. perf. data): https://github.com/nodejs/node/pull/21072
 struct CallbackBundle {
-  // Bind the lifecycle of `this` C++ object to a JavaScript object.
-  // We never delete a CallbackBundle C++ object directly.
-  void BindLifecycleTo(v8::Isolate* isolate, v8::Local<v8::Value> target) {
-    handle.Reset(isolate, target);
-    handle.SetWeak(this, WeakCallback, v8::WeakCallbackType::kParameter);
-  }
-
   napi_env       env;      // Necessary to invoke C++ NAPI callback
   void*          cb_data;  // The user provided callback data
   napi_callback  function_or_getter;
   napi_callback  setter;
-  v8impl::Persistent<v8::Value> handle;  // Die with this JavaScript object
-
- private:
-  static void WeakCallback(v8::WeakCallbackInfo<CallbackBundle> const& info) {
-    // Use the "WeakCallback mechanism" to delete the C++ `bundle` object.
-    // This will be called when the v8::External containing `this` pointer
-    // is being GC-ed.
-    CallbackBundle* bundle = info.GetParameter();
-    delete bundle;
-  }
 };
 
 // Base class extended by classes that wrap V8 function and property callback
@@ -452,7 +439,9 @@ class CallbackWrapperBase : public CallbackWrapper {
     napi_callback cb = _bundle->*FunctionField;
 
     napi_value result;
-    NapiCallIntoModuleThrow(env, [&]() { result = cb(env, cbinfo_wrapper); });
+    env->CallIntoModuleThrow([&](napi_env env) {
+      result = cb(env, cbinfo_wrapper);
+    });
 
     if (result != nullptr) {
       this->SetReturnValue(result);
@@ -580,6 +569,11 @@ class SetterCallbackWrapper
   const v8::Local<v8::Value>& _value;
 };
 
+static void DeleteCallbackBundle(napi_env env, void* data, void* hint) {
+  CallbackBundle* bundle = static_cast<CallbackBundle*>(data);
+  delete bundle;
+}
+
 // Creates an object to be made available to the static function callback
 // wrapper, used to retrieve the native callback function and data pointer.
 static
@@ -591,7 +585,7 @@ v8::Local<v8::Value> CreateFunctionCallbackData(napi_env env,
   bundle->cb_data = data;
   bundle->env = env;
   v8::Local<v8::Value> cbdata = v8::External::New(env->isolate, bundle);
-  bundle->BindLifecycleTo(env->isolate, cbdata);
+  Reference::New(env, cbdata, 0, true, DeleteCallbackBundle, bundle, nullptr);
 
   return cbdata;
 }
@@ -677,6 +671,8 @@ const char* error_messages[] = {nullptr,
                                 "Thread-safe function handle is closing",
                                 "A bigint was expected",
                                 "A date was expected",
+                                "An arraybuffer was expected",
+                                "A detachable arraybuffer was expected",
 };
 
 napi_status napi_get_last_error_info(napi_env env,
@@ -684,14 +680,16 @@ napi_status napi_get_last_error_info(napi_env env,
   CHECK_ENV(env);
   CHECK_ARG(env, result);
 
-  // you must update this assert to reference the last message
-  // in the napi_status enum each time a new error message is added.
+  // The value of the constant below must be updated to reference the last
+  // message in the `napi_status` enum each time a new error message is added.
   // We don't have a napi_status_last as this would result in an ABI
   // change each time a message was added.
+  const int last_status = napi_detachable_arraybuffer_expected;
+
   static_assert(
-      NAPI_ARRAYSIZE(error_messages) == napi_date_expected + 1,
+      NAPI_ARRAYSIZE(error_messages) == last_status + 1,
       "Count of error messages must match count of error values");
-  CHECK_LE(env->last_error.error_code, napi_callback_scope_mismatch);
+  CHECK_LE(env->last_error.error_code, last_status);
 
   // Wait until someone requests the last error information to fetch the error
   // message string
@@ -2981,6 +2979,48 @@ napi_status napi_adjust_external_memory(napi_env env,
 
   *adjusted_value = env->isolate->AdjustAmountOfExternalAllocatedMemory(
       change_in_bytes);
+
+  return napi_clear_last_error(env);
+}
+
+napi_status napi_set_instance_data(napi_env env,
+                                   void* data,
+                                   napi_finalize finalize_cb,
+                                   void* finalize_hint) {
+  CHECK_ENV(env);
+
+  env->instance_data.data = data;
+  env->instance_data.finalize_cb = finalize_cb;
+  env->instance_data.hint = finalize_hint;
+
+  return napi_clear_last_error(env);
+}
+
+napi_status napi_get_instance_data(napi_env env,
+                                   void** data) {
+  CHECK_ENV(env);
+  CHECK_ARG(env, data);
+
+  *data = env->instance_data.data;
+
+  return napi_clear_last_error(env);
+}
+
+napi_status napi_detach_arraybuffer(napi_env env, napi_value arraybuffer) {
+  CHECK_ENV(env);
+  CHECK_ARG(env, arraybuffer);
+
+  v8::Local<v8::Value> value = v8impl::V8LocalValueFromJsValue(arraybuffer);
+  RETURN_STATUS_IF_FALSE(
+      env, value->IsArrayBuffer(), napi_arraybuffer_expected);
+
+  v8::Local<v8::ArrayBuffer> it = value.As<v8::ArrayBuffer>();
+  RETURN_STATUS_IF_FALSE(
+      env, it->IsExternal(), napi_detachable_arraybuffer_expected);
+  RETURN_STATUS_IF_FALSE(
+      env, it->IsDetachable(), napi_detachable_arraybuffer_expected);
+
+  it->Detach();
 
   return napi_clear_last_error(env);
 }

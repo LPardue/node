@@ -27,7 +27,7 @@
 
 #include "test/cctest/cctest.h"
 
-#include "src/thread-id.h"
+#include "src/execution/thread-id.h"
 
 namespace v8 {
 namespace internal {
@@ -54,7 +54,7 @@ class ThreadIdValidationThread : public base::Thread {
     }
     refs_[thread_no_].store(thread_id, std::memory_order_relaxed);
     if (thread_to_start_ != nullptr) {
-      thread_to_start_->Start();
+      CHECK(thread_to_start_->Start());
     }
     semaphore_->Signal();
   }
@@ -77,7 +77,7 @@ TEST(ThreadIdValidation) {
     threads[i] =
         base::make_unique<ThreadIdValidationThread>(prev, refs, i, &semaphore);
   }
-  threads[0]->Start();
+  CHECK(threads[0]->Start());
   for (int i = 0; i < kNThreads; i++) {
     semaphore.Wait();
   }

@@ -27,7 +27,7 @@ PREREQUISITES -----------------------------------------------------------------
 
     Follow the instructions on http://clang.llvm.org/get_started.html.
 
-    Make sure to pass -DCMAKE_BUILD_TYPE=Release to cmake to get Release build
+    Make sure to pass -DCMAKE_BUILD_TYPE=Release to cmake to get Release build 
     instead of a Debug one.
 
 (3) Build gcmole Clang plugin (libgcmole.so)
@@ -70,6 +70,12 @@ warning. Messages "Failed to resolve v8::internal::Object" are benign and
 can be ignored.
 
 If any errors were found driver exits with non-zero status.
+
+TESTING -----------------------------------------------------------------------
+
+Tests are automatically run by the main lua runner. Expectations are in
+test-expectations.txt and need to be updated whenever the sources of the tests
+in gcmole-test.cc are modified (line numbers also count).
 
 PACKAGING ---------------------------------------------------------------------
 

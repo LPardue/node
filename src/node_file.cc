@@ -52,11 +52,9 @@ namespace node {
 namespace fs {
 
 using v8::Array;
-using v8::BigUint64Array;
 using v8::Context;
 using v8::DontDelete;
 using v8::EscapableHandleScope;
-using v8::Float64Array;
 using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
@@ -88,7 +86,10 @@ constexpr char kPathSeparator = '/';
 const char* const kPathSeparator = "\\/";
 #endif
 
-#define GET_OFFSET(a) ((a)->IsNumber() ? (a).As<Integer>()->Value() : -1)
+inline int64_t GetOffset(Local<Value> value) {
+  return IsSafeJsInt(value) ? value.As<Integer>()->Value() : -1;
+}
+
 #define TRACE_NAME(name) "fs.sync." #name
 #define GET_TRACE_ENABLED                                                  \
   (*TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED                             \
@@ -170,35 +171,33 @@ inline void FileHandle::Close() {
 
   struct err_detail { int ret; int fd; };
 
-  err_detail* detail = new err_detail { ret, fd_ };
+  err_detail detail { ret, fd_ };
 
   if (ret < 0) {
     // Do not unref this
-    env()->SetImmediate([](Environment* env, void* data) {
+    env()->SetImmediate([detail](Environment* env) {
       char msg[70];
-      std::unique_ptr<err_detail> detail(static_cast<err_detail*>(data));
       snprintf(msg, arraysize(msg),
               "Closing file descriptor %d on garbage collection failed",
-              detail->fd);
+              detail.fd);
       // This exception will end up being fatal for the process because
       // it is being thrown from within the SetImmediate handler and
       // there is no JS stack to bubble it to. In other words, tearing
       // down the process is the only reasonable thing we can do here.
       HandleScope handle_scope(env->isolate());
-      env->ThrowUVException(detail->ret, "close", msg);
-    }, detail);
+      env->ThrowUVException(detail.ret, "close", msg);
+    });
     return;
   }
 
   // If the close was successful, we still want to emit a process warning
   // to notify that the file descriptor was gc'd. We want to be noisy about
   // this because not explicitly closing the FileHandle is a bug.
-  env()->SetUnrefImmediate([](Environment* env, void* data) {
-    std::unique_ptr<err_detail> detail(static_cast<err_detail*>(data));
+  env()->SetUnrefImmediate([detail](Environment* env) {
     ProcessEmitWarning(env,
                        "Closing file descriptor %d on garbage collection",
-                       detail->fd);
-  }, detail);
+                       detail.fd);
+  });
 }
 
 void FileHandle::CloseReq::Resolve() {
@@ -677,94 +676,6 @@ void AfterScanDirWithTypes(uv_fs_t* req) {
   req_wrap->Resolve(result);
 }
 
-
-// This class is only used on sync fs calls.
-// For async calls FSReqCallback is used.
-class FSReqWrapSync {
- public:
-  FSReqWrapSync() = default;
-  ~FSReqWrapSync() { uv_fs_req_cleanup(&req); }
-  uv_fs_t req;
-
-  FSReqWrapSync(const FSReqWrapSync&) = delete;
-  FSReqWrapSync& operator=(const FSReqWrapSync&) = delete;
-};
-
-// Returns nullptr if the operation fails from the start.
-template <typename Func, typename... Args>
-inline FSReqBase* AsyncDestCall(Environment* env,
-    FSReqBase* req_wrap,
-    const FunctionCallbackInfo<Value>& args,
-    const char* syscall, const char* dest, size_t len,
-    enum encoding enc, uv_fs_cb after, Func fn, Args... fn_args) {
-  CHECK_NOT_NULL(req_wrap);
-  req_wrap->Init(syscall, dest, len, enc);
-  int err = req_wrap->Dispatch(fn, fn_args..., after);
-  if (err < 0) {
-    uv_fs_t* uv_req = req_wrap->req();
-    uv_req->result = err;
-    uv_req->path = nullptr;
-    after(uv_req);  // after may delete req_wrap if there is an error
-    req_wrap = nullptr;
-  } else {
-    req_wrap->SetReturnValue(args);
-  }
-
-  return req_wrap;
-}
-
-// Returns nullptr if the operation fails from the start.
-template <typename Func, typename... Args>
-inline FSReqBase* AsyncCall(Environment* env,
-    FSReqBase* req_wrap,
-    const FunctionCallbackInfo<Value>& args,
-    const char* syscall, enum encoding enc,
-    uv_fs_cb after, Func fn, Args... fn_args) {
-  return AsyncDestCall(env, req_wrap, args,
-                       syscall, nullptr, 0, enc,
-                       after, fn, fn_args...);
-}
-
-// Template counterpart of SYNC_CALL, except that it only puts
-// the error number and the syscall in the context instead of
-// creating an error in the C++ land.
-// ctx must be checked using value->IsObject() before being passed.
-template <typename Func, typename... Args>
-inline int SyncCall(Environment* env, Local<Value> ctx, FSReqWrapSync* req_wrap,
-    const char* syscall, Func fn, Args... args) {
-  env->PrintSyncTrace();
-  int err = fn(env->event_loop(), &(req_wrap->req), args..., nullptr);
-  if (err < 0) {
-    Local<Context> context = env->context();
-    Local<Object> ctx_obj = ctx.As<Object>();
-    Isolate* isolate = env->isolate();
-    ctx_obj->Set(context,
-             env->errno_string(),
-             Integer::New(isolate, err)).Check();
-    ctx_obj->Set(context,
-             env->syscall_string(),
-             OneByteString(isolate, syscall)).Check();
-  }
-  return err;
-}
-
-// TODO(addaleax): Currently, callers check the return value and assume
-// that nullptr indicates a synchronous call, rather than a failure.
-// Failure conditions should be disambiguated and handled appropriately.
-inline FSReqBase* GetReqWrap(Environment* env, Local<Value> value,
-                             bool use_bigint = false) {
-  if (value->IsObject()) {
-    return Unwrap<FSReqBase>(value.As<Object>());
-  } else if (value->StrictEquals(env->fs_use_promises_symbol())) {
-    if (use_bigint) {
-      return FSReqPromise<AliasedBigUint64Array>::New(env, use_bigint);
-    } else {
-      return FSReqPromise<AliasedFloat64Array>::New(env, use_bigint);
-    }
-  }
-  return nullptr;
-}
-
 void Access(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
@@ -872,7 +783,10 @@ static void InternalModuleReadJSON(const FunctionCallbackInfo<Value>& args) {
   }
 
   const size_t size = offset - start;
-  if (size == 0 || size == SearchString(&chars[start], size, "\"main\"")) {
+  if (size == 0 || (
+    size == SearchString(&chars[start], size, "\"main\"") &&
+    size == SearchString(&chars[start], size, "\"exports\"") &&
+    size == SearchString(&chars[start], size, "\"type\""))) {
     return;
   } else {
     Local<String> chars_string =
@@ -1130,7 +1044,7 @@ static void FTruncate(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsInt32());
   const int fd = args[0].As<Int32>()->Value();
 
-  CHECK(args[1]->IsNumber());
+  CHECK(IsSafeJsInt(args[1]));
   const int64_t len = args[1].As<Integer>()->Value();
 
   FSReqBase* req_wrap_async = GetReqWrap(env, args[2]);
@@ -1669,9 +1583,11 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   char* buffer_data = Buffer::Data(buffer_obj);
   size_t buffer_length = Buffer::Length(buffer_obj);
 
-  CHECK(args[2]->IsInt32());
-  const size_t off = static_cast<size_t>(args[2].As<Int32>()->Value());
-  CHECK_LE(off, buffer_length);
+  CHECK(IsSafeJsInt(args[2]));
+  const int64_t off_64 = args[2].As<Integer>()->Value();
+  CHECK_GE(off_64, 0);
+  CHECK_LE(static_cast<uint64_t>(off_64), buffer_length);
+  const size_t off = static_cast<size_t>(off_64);
 
   CHECK(args[3]->IsInt32());
   const size_t len = static_cast<size_t>(args[3].As<Int32>()->Value());
@@ -1679,7 +1595,7 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   CHECK_LE(len, buffer_length);
   CHECK_GE(off + len, off);
 
-  const int64_t pos = GET_OFFSET(args[4]);
+  const int64_t pos = GetOffset(args[4]);
 
   char* buf = buffer_data + off;
   uv_buf_t uvbuf = uv_buf_init(buf, len);
@@ -1719,7 +1635,7 @@ static void WriteBuffers(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[1]->IsArray());
   Local<Array> chunks = args[1].As<Array>();
 
-  int64_t pos = GET_OFFSET(args[2]);
+  int64_t pos = GetOffset(args[2]);
 
   MaybeStackBuffer<uv_buf_t> iovs(chunks->Length());
 
@@ -1763,7 +1679,7 @@ static void WriteString(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsInt32());
   const int fd = args[0].As<Int32>()->Value();
 
-  const int64_t pos = GET_OFFSET(args[2]);
+  const int64_t pos = GetOffset(args[2]);
 
   const auto enc = ParseEncoding(isolate, args[3], UTF8);
 
@@ -1851,7 +1767,7 @@ static void WriteString(const FunctionCallbackInfo<Value>& args) {
  *
  * 0 fd        int32. file descriptor
  * 1 buffer    instance of Buffer
- * 2 offset    int32. offset to start reading into inside buffer
+ * 2 offset    int64. offset to start reading into inside buffer
  * 3 length    int32. length to read
  * 4 position  int64. file position - -1 for current position
  */
@@ -1869,15 +1785,17 @@ static void Read(const FunctionCallbackInfo<Value>& args) {
   char* buffer_data = Buffer::Data(buffer_obj);
   size_t buffer_length = Buffer::Length(buffer_obj);
 
-  CHECK(args[2]->IsInt32());
-  const size_t off = static_cast<size_t>(args[2].As<Int32>()->Value());
-  CHECK_LT(off, buffer_length);
+  CHECK(IsSafeJsInt(args[2]));
+  const int64_t off_64 = args[2].As<Integer>()->Value();
+  CHECK_GE(off_64, 0);
+  CHECK_LT(static_cast<uint64_t>(off_64), buffer_length);
+  const size_t off = static_cast<size_t>(off_64);
 
   CHECK(args[3]->IsInt32());
   const size_t len = static_cast<size_t>(args[3].As<Int32>()->Value());
   CHECK(Buffer::IsWithinBounds(off, len, buffer_length));
 
-  CHECK(args[4]->IsNumber());
+  CHECK(IsSafeJsInt(args[4]));
   const int64_t pos = args[4].As<Integer>()->Value();
 
   char* buf = buffer_data + off;

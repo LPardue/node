@@ -165,7 +165,7 @@
         }, {
           'gomadir': '<!(/bin/echo -n ${HOME}/goma)',
         }],
-        ['host_arch!="ppc" and host_arch!="ppc64" and host_arch!="ppc64le" and host_arch!="s390" and host_arch!="s390x"', {
+        ['host_arch!="ppc" and host_arch!="ppc64" and host_arch!="ppc64le" and host_arch!="s390x"', {
           'host_clang%': 1,
         }, {
           'host_clang%': 0,
@@ -226,12 +226,6 @@
     #     or need a debug version of V8. This should produce near-release
     #     speeds.
     'v8_optimized_debug%': 0,
-
-    # Use external files for startup data blobs:
-    # the JS builtins sources and the start snapshot.
-    # Embedders that don't use standalone.gypi will need to add
-    # their own default value.
-    'v8_use_external_startup_data%': 1,
 
     # Relative path to icu.gyp from this file.
     'icu_gyp_path': '../third_party/icu/icu.gyp',

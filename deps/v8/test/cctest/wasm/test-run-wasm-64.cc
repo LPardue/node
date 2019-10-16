@@ -6,10 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "src/assembler-inl.h"
 #include "src/base/bits.h"
 #include "src/base/overflowing-math.h"
-#include "src/objects-inl.h"
+#include "src/codegen/assembler-inl.h"
+#include "src/objects/objects-inl.h"
 
 #include "test/cctest/cctest.h"
 #include "test/cctest/compiler/value-helper.h"
@@ -618,7 +618,9 @@ WASM_EXEC_TEST(F32UConvertI64) {
                 {0x8000008000000000, 0x5F000000},
                 {0x8000008000000001, 0x5F000001},
                 {0x8000000000000400, 0x5F000000},
-                {0x8000000000000401, 0x5F000000}};
+                {0x8000000000000401, 0x5F000000},
+                {0x20000020000001, 0x5a000001},
+                {0xFFFFFe8000000001, 0x5f7FFFFF}};
   WasmRunner<float, uint64_t> r(execution_tier);
   BUILD(r, WASM_F32_UCONVERT_I64(WASM_GET_LOCAL(0)));
   for (size_t i = 0; i < arraysize(values); i++) {

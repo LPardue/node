@@ -471,12 +471,16 @@ void SecureContext::Initialize(Environment* env, Local<Object> target) {
 
   env->SetProtoMethod(t, "init", Init);
   env->SetProtoMethod(t, "setKey", SetKey);
+#ifndef OPENSSL_NO_ENGINE
+  env->SetProtoMethod(t, "setEngineKey", SetEngineKey);
+#endif  // !OPENSSL_NO_ENGINE
   env->SetProtoMethod(t, "setCert", SetCert);
   env->SetProtoMethod(t, "addCACert", AddCACert);
   env->SetProtoMethod(t, "addCRL", AddCRL);
   env->SetProtoMethod(t, "addRootCerts", AddRootCerts);
   env->SetProtoMethod(t, "setCipherSuites", SetCipherSuites);
   env->SetProtoMethod(t, "setCiphers", SetCiphers);
+  env->SetProtoMethod(t, "setSigalgs", SetSigalgs);
   env->SetProtoMethod(t, "setECDHCurve", SetECDHCurve);
   env->SetProtoMethod(t, "setDHParam", SetDHParam);
   env->SetProtoMethod(t, "setMaxProto", SetMaxProto);
@@ -745,6 +749,73 @@ void SecureContext::SetKey(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
+void SecureContext::SetSigalgs(const FunctionCallbackInfo<Value>& args) {
+  SecureContext* sc;
+  ASSIGN_OR_RETURN_UNWRAP(&sc, args.Holder());
+  Environment* env = sc->env();
+  ClearErrorOnReturn clear_error_on_return;
+
+  CHECK_EQ(args.Length(), 1);
+  CHECK(args[0]->IsString());
+
+  const node::Utf8Value sigalgs(env->isolate(), args[0]);
+
+  int rv = SSL_CTX_set1_sigalgs_list(sc->ctx_.get(), *sigalgs);
+
+  if (rv == 0) {
+    return ThrowCryptoError(env, ERR_get_error());
+  }
+}
+
+#ifndef OPENSSL_NO_ENGINE
+// Helpers for the smart pointer.
+void ENGINE_free_fn(ENGINE* engine) { ENGINE_free(engine); }
+
+void ENGINE_finish_and_free_fn(ENGINE* engine) {
+  ENGINE_finish(engine);
+  ENGINE_free(engine);
+}
+
+void SecureContext::SetEngineKey(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+
+  SecureContext* sc;
+  ASSIGN_OR_RETURN_UNWRAP(&sc, args.Holder());
+
+  CHECK_EQ(args.Length(), 2);
+
+  char errmsg[1024];
+  const node::Utf8Value engine_id(env->isolate(), args[1]);
+  std::unique_ptr<ENGINE, std::function<void(ENGINE*)>> e =
+                         { LoadEngineById(*engine_id, &errmsg),
+                           ENGINE_free_fn };
+  if (e.get() == nullptr) {
+    return env->ThrowError(errmsg);
+  }
+
+  if (!ENGINE_init(e.get())) {
+    return env->ThrowError("ENGINE_init");
+  }
+
+  e.get_deleter() = ENGINE_finish_and_free_fn;
+
+  const node::Utf8Value key_name(env->isolate(), args[0]);
+  EVPKeyPointer key(ENGINE_load_private_key(e.get(), *key_name,
+                                            nullptr, nullptr));
+
+  if (!key) {
+    return ThrowCryptoError(env, ERR_get_error(), "ENGINE_load_private_key");
+  }
+
+  int rv = SSL_CTX_use_PrivateKey(sc->ctx_.get(), key.get());
+
+  if (rv == 0) {
+    return ThrowCryptoError(env, ERR_get_error(), "SSL_CTX_use_PrivateKey");
+  }
+
+  sc->private_key_engine_ = std::move(e);
+}
+#endif  // !OPENSSL_NO_ENGINE
 
 int SSL_CTX_get_issuer(SSL_CTX* ctx, X509* cert, X509** issuer) {
   X509_STORE* store = SSL_CTX_get_cert_store(ctx);
@@ -1420,9 +1491,6 @@ void SecureContext::LoadPKCS12(const FunctionCallbackInfo<Value>& args) {
 
 
 #ifndef OPENSSL_NO_ENGINE
-// Helper for the smart pointer.
-void ENGINE_free_fn(ENGINE* engine) { ENGINE_free(engine); }
-
 void SecureContext::SetClientCertEngine(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
@@ -1690,6 +1758,7 @@ void SSLWrap<Base>::AddMethods(Environment* env, Local<FunctionTemplate> t) {
   env->SetProtoMethodNoSideEffect(t, "isSessionReused", IsSessionReused);
   env->SetProtoMethodNoSideEffect(t, "verifyError", VerifyError);
   env->SetProtoMethodNoSideEffect(t, "getCipher", GetCipher);
+  env->SetProtoMethodNoSideEffect(t, "getSharedSigalgs", GetSharedSigalgs);
   env->SetProtoMethod(t, "endParser", EndParser);
   env->SetProtoMethod(t, "certCbDone", CertCbDone);
   env->SetProtoMethod(t, "renegotiate", Renegotiate);
@@ -2317,11 +2386,12 @@ void SSLWrap<Base>::GetSession(const FunctionCallbackInfo<Value>& args) {
     return;
 
   int slen = i2d_SSL_SESSION(sess, nullptr);
-  CHECK_GT(slen, 0);
+  if (slen <= 0)
+    return;  // Invalid or malformed session.
 
   AllocatedBuffer sbuf = env->AllocateManaged(slen);
   unsigned char* p = reinterpret_cast<unsigned char*>(sbuf.data());
-  i2d_SSL_SESSION(sess, &p);
+  CHECK_LT(0, i2d_SSL_SESSION(sess, &p));
   args.GetReturnValue().Set(sbuf.ToBuffer().ToLocalChecked());
 }
 
@@ -2619,6 +2689,88 @@ void SSLWrap<Base>::GetCipher(const FunctionCallbackInfo<Value>& args) {
   info->Set(context, env->version_string(),
             OneByteString(args.GetIsolate(), cipher_version)).Check();
   args.GetReturnValue().Set(info);
+}
+
+
+template <class Base>
+void SSLWrap<Base>::GetSharedSigalgs(const FunctionCallbackInfo<Value>& args) {
+  Base* w;
+  ASSIGN_OR_RETURN_UNWRAP(&w, args.Holder());
+  Environment* env = w->ssl_env();
+  std::vector<Local<Value>> ret_arr;
+
+  SSL* ssl = w->ssl_.get();
+  int nsig = SSL_get_shared_sigalgs(ssl, 0, nullptr, nullptr, nullptr, nullptr,
+                                    nullptr);
+
+  for (int i = 0; i < nsig; i++) {
+    int hash_nid;
+    int sign_nid;
+    std::string sig_with_md;
+
+    SSL_get_shared_sigalgs(ssl, i, &sign_nid, &hash_nid, nullptr, nullptr,
+                           nullptr);
+
+    switch (sign_nid) {
+      case EVP_PKEY_RSA:
+        sig_with_md = "RSA+";
+        break;
+
+      case EVP_PKEY_RSA_PSS:
+        sig_with_md = "RSA-PSS+";
+        break;
+
+      case EVP_PKEY_DSA:
+        sig_with_md = "DSA+";
+        break;
+
+      case EVP_PKEY_EC:
+        sig_with_md = "ECDSA+";
+        break;
+
+      case NID_ED25519:
+        sig_with_md = "Ed25519+";
+        break;
+
+      case NID_ED448:
+        sig_with_md = "Ed448+";
+        break;
+
+      case NID_id_GostR3410_2001:
+        sig_with_md = "gost2001+";
+        break;
+
+      case NID_id_GostR3410_2012_256:
+        sig_with_md = "gost2012_256+";
+        break;
+
+      case NID_id_GostR3410_2012_512:
+        sig_with_md = "gost2012_512+";
+        break;
+
+      default:
+        const char* sn = OBJ_nid2sn(sign_nid);
+
+        if (sn != nullptr) {
+          sig_with_md = std::string(sn) + "+";
+        } else {
+          sig_with_md = "UNDEF+";
+        }
+        break;
+    }
+
+    const char* sn_hash = OBJ_nid2sn(hash_nid);
+    if (sn_hash != nullptr) {
+      sig_with_md += std::string(sn_hash);
+    } else {
+      sig_with_md += "UNDEF";
+    }
+
+    ret_arr.push_back(OneByteString(env->isolate(), sig_with_md.c_str()));
+  }
+
+  args.GetReturnValue().Set(
+                 Array::New(env->isolate(), ret_arr.data(), ret_arr.size()));
 }
 
 
@@ -4317,8 +4469,9 @@ void CipherBase::Update(const FunctionCallbackInfo<Value>& args) {
   // Only copy the data if we have to, because it's a string
   if (args[0]->IsString()) {
     StringBytes::InlineDecoder decoder;
-    if (!decoder.Decode(env, args[0].As<String>(), args[1], UTF8)
-             .FromMaybe(false))
+    enum encoding enc = ParseEncoding(env->isolate(), args[1], UTF8);
+
+    if (decoder.Decode(env, args[0].As<String>(), enc).IsNothing())
       return;
     r = cipher->Update(decoder.out(), decoder.size(), &out);
   } else {
@@ -4501,8 +4654,9 @@ void Hmac::HmacUpdate(const FunctionCallbackInfo<Value>& args) {
   bool r = false;
   if (args[0]->IsString()) {
     StringBytes::InlineDecoder decoder;
-    if (decoder.Decode(env, args[0].As<String>(), args[1], UTF8)
-            .FromMaybe(false)) {
+    enum encoding enc = ParseEncoding(env->isolate(), args[1], UTF8);
+
+    if (!decoder.Decode(env, args[0].As<String>(), enc).IsNothing()) {
       r = hmac->HmacUpdate(decoder.out(), decoder.size());
     }
   } else {
@@ -4524,7 +4678,6 @@ void Hmac::HmacDigest(const FunctionCallbackInfo<Value>& args) {
   if (args.Length() >= 1) {
     encoding = ParseEncoding(env->isolate(), args[0], BUFFER);
   }
-  CHECK_NE(encoding, UCS2);  // Digest does not support UTF-16
 
   unsigned char md_value[EVP_MAX_MD_SIZE];
   unsigned int md_len = 0;
@@ -4567,25 +4720,54 @@ void Hash::Initialize(Environment* env, Local<Object> target) {
 void Hash::New(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
 
-  const node::Utf8Value hash_type(env->isolate(), args[0]);
+  const Hash* orig = nullptr;
+  const EVP_MD* md = nullptr;
+
+  if (args[0]->IsObject()) {
+    ASSIGN_OR_RETURN_UNWRAP(&orig, args[0].As<Object>());
+    md = EVP_MD_CTX_md(orig->mdctx_.get());
+  } else {
+    const node::Utf8Value hash_type(env->isolate(), args[0]);
+    md = EVP_get_digestbyname(*hash_type);
+  }
+
+  Maybe<unsigned int> xof_md_len = Nothing<unsigned int>();
+  if (!args[1]->IsUndefined()) {
+    CHECK(args[1]->IsUint32());
+    xof_md_len = Just<unsigned int>(args[1].As<Uint32>()->Value());
+  }
 
   Hash* hash = new Hash(env, args.This());
-  if (!hash->HashInit(*hash_type)) {
+  if (md == nullptr || !hash->HashInit(md, xof_md_len)) {
     return ThrowCryptoError(env, ERR_get_error(),
                             "Digest method not supported");
+  }
+
+  if (orig != nullptr &&
+      0 >= EVP_MD_CTX_copy(hash->mdctx_.get(), orig->mdctx_.get())) {
+    return ThrowCryptoError(env, ERR_get_error(), "Digest copy error");
   }
 }
 
 
-bool Hash::HashInit(const char* hash_type) {
-  const EVP_MD* md = EVP_get_digestbyname(hash_type);
-  if (md == nullptr)
-    return false;
+bool Hash::HashInit(const EVP_MD* md, Maybe<unsigned int> xof_md_len) {
   mdctx_.reset(EVP_MD_CTX_new());
   if (!mdctx_ || EVP_DigestInit_ex(mdctx_.get(), md, nullptr) <= 0) {
     mdctx_.reset();
     return false;
   }
+
+  md_len_ = EVP_MD_size(md);
+  if (xof_md_len.IsJust() && xof_md_len.FromJust() != md_len_) {
+    // This is a little hack to cause createHash to fail when an incorrect
+    // hashSize option was passed for a non-XOF hash function.
+    if ((EVP_MD_flags(md) & EVP_MD_FLAG_XOF) == 0) {
+      EVPerr(EVP_F_EVP_DIGESTFINALXOF, EVP_R_NOT_XOF_OR_INVALID_LENGTH);
+      return false;
+    }
+    md_len_ = xof_md_len.FromJust();
+  }
+
   return true;
 }
 
@@ -4608,8 +4790,9 @@ void Hash::HashUpdate(const FunctionCallbackInfo<Value>& args) {
   bool r = true;
   if (args[0]->IsString()) {
     StringBytes::InlineDecoder decoder;
-    if (!decoder.Decode(env, args[0].As<String>(), args[1], UTF8)
-             .FromMaybe(false)) {
+    enum encoding enc = ParseEncoding(env->isolate(), args[1], UTF8);
+
+    if (decoder.Decode(env, args[0].As<String>(), enc).IsNothing()) {
       args.GetReturnValue().Set(false);
       return;
     }
@@ -4634,13 +4817,40 @@ void Hash::HashDigest(const FunctionCallbackInfo<Value>& args) {
     encoding = ParseEncoding(env->isolate(), args[0], BUFFER);
   }
 
-  if (hash->md_len_ == 0) {
+  // TODO(tniessen): SHA3_squeeze does not work for zero-length outputs on all
+  // platforms and will cause a segmentation fault if called. This workaround
+  // causes hash.digest() to correctly return an empty buffer / string.
+  // See https://github.com/openssl/openssl/issues/9431.
+  if (!hash->has_md_ && hash->md_len_ == 0) {
+    hash->has_md_ = true;
+  }
+
+  if (!hash->has_md_) {
     // Some hash algorithms such as SHA3 do not support calling
     // EVP_DigestFinal_ex more than once, however, Hash._flush
     // and Hash.digest can both be used to retrieve the digest,
     // so we need to cache it.
     // See https://github.com/nodejs/node/issues/28245.
-    EVP_DigestFinal_ex(hash->mdctx_.get(), hash->md_value_, &hash->md_len_);
+
+    hash->md_value_ = MallocOpenSSL<unsigned char>(hash->md_len_);
+
+    size_t default_len = EVP_MD_CTX_size(hash->mdctx_.get());
+    int ret;
+    if (hash->md_len_ == default_len) {
+      ret = EVP_DigestFinal_ex(hash->mdctx_.get(), hash->md_value_,
+                               &hash->md_len_);
+    } else {
+      ret = EVP_DigestFinalXOF(hash->mdctx_.get(), hash->md_value_,
+                               hash->md_len_);
+    }
+
+    if (ret != 1) {
+      OPENSSL_free(hash->md_value_);
+      hash->md_value_ = nullptr;
+      return ThrowCryptoError(env, ERR_get_error());
+    }
+
+    hash->has_md_ = true;
   }
 
   Local<Value> error;
@@ -4831,6 +5041,28 @@ static AllocatedBuffer Node_SignFinal(Environment* env,
   return AllocatedBuffer();
 }
 
+static inline bool ValidateDSAParameters(EVP_PKEY* key) {
+#ifdef NODE_FIPS_MODE
+  /* Validate DSA2 parameters from FIPS 186-4 */
+  if (FIPS_mode() && EVP_PKEY_DSA == EVP_PKEY_base_id(key)) {
+    DSA* dsa = EVP_PKEY_get0_DSA(key);
+    const BIGNUM* p;
+    DSA_get0_pqg(dsa, &p, nullptr, nullptr);
+    size_t L = BN_num_bits(p);
+    const BIGNUM* q;
+    DSA_get0_pqg(dsa, nullptr, &q, nullptr);
+    size_t N = BN_num_bits(q);
+
+    return (L == 1024 && N == 160) ||
+           (L == 2048 && N == 224) ||
+           (L == 2048 && N == 256) ||
+           (L == 3072 && N == 256);
+  }
+#endif  // NODE_FIPS_MODE
+
+  return true;
+}
+
 Sign::SignResult Sign::SignFinal(
     const ManagedEVPPKey& pkey,
     int padding,
@@ -4840,32 +5072,8 @@ Sign::SignResult Sign::SignFinal(
 
   EVPMDPointer mdctx = std::move(mdctx_);
 
-#ifdef NODE_FIPS_MODE
-  /* Validate DSA2 parameters from FIPS 186-4 */
-  if (FIPS_mode() && EVP_PKEY_DSA == EVP_PKEY_base_id(pkey.get())) {
-    DSA* dsa = EVP_PKEY_get0_DSA(pkey.get());
-    const BIGNUM* p;
-    DSA_get0_pqg(dsa, &p, nullptr, nullptr);
-    size_t L = BN_num_bits(p);
-    const BIGNUM* q;
-    DSA_get0_pqg(dsa, nullptr, &q, nullptr);
-    size_t N = BN_num_bits(q);
-    bool result = false;
-
-    if (L == 1024 && N == 160)
-      result = true;
-    else if (L == 2048 && N == 224)
-      result = true;
-    else if (L == 2048 && N == 256)
-      result = true;
-    else if (L == 3072 && N == 256)
-      result = true;
-
-    if (!result) {
-      return SignResult(kSignPrivateKey);
-    }
-  }
-#endif  // NODE_FIPS_MODE
+  if (!ValidateDSAParameters(pkey.get()))
+    return SignResult(kSignPrivateKey);
 
   AllocatedBuffer buffer =
       Node_SignFinal(env(), std::move(mdctx), pkey, padding, salt_len);
@@ -4917,32 +5125,8 @@ void SignOneShot(const FunctionCallbackInfo<Value>& args) {
   if (!key)
     return;
 
-#ifdef NODE_FIPS_MODE
-  /* Validate DSA2 parameters from FIPS 186-4 */
-  if (FIPS_mode() && EVP_PKEY_DSA == EVP_PKEY_base_id(key.get())) {
-    DSA* dsa = EVP_PKEY_get0_DSA(key.get());
-    const BIGNUM* p;
-    DSA_get0_pqg(dsa, &p, nullptr, nullptr);
-    size_t L = BN_num_bits(p);
-    const BIGNUM* q;
-    DSA_get0_pqg(dsa, nullptr, &q, nullptr);
-    size_t N = BN_num_bits(q);
-    bool result = false;
-
-    if (L == 1024 && N == 160)
-      result = true;
-    else if (L == 2048 && N == 224)
-      result = true;
-    else if (L == 2048 && N == 256)
-      result = true;
-    else if (L == 3072 && N == 256)
-      result = true;
-
-    if (!result) {
-      return CheckThrow(env, SignBase::Error::kSignPrivateKey);
-    }
-  }
-#endif  // NODE_FIPS_MODE
+  if (!ValidateDSAParameters(key.get()))
+    return CheckThrow(env, SignBase::Error::kSignPrivateKey);
 
   ArrayBufferViewContents<char> data(args[offset]);
 
@@ -5180,6 +5364,9 @@ template <PublicKeyCipher::Operation operation,
 bool PublicKeyCipher::Cipher(Environment* env,
                              const ManagedEVPPKey& pkey,
                              int padding,
+                             const EVP_MD* digest,
+                             const void* oaep_label,
+                             size_t oaep_label_len,
                              const unsigned char* data,
                              int len,
                              AllocatedBuffer* out) {
@@ -5190,6 +5377,22 @@ bool PublicKeyCipher::Cipher(Environment* env,
     return false;
   if (EVP_PKEY_CTX_set_rsa_padding(ctx.get(), padding) <= 0)
     return false;
+
+  if (digest != nullptr) {
+    if (EVP_PKEY_CTX_set_rsa_oaep_md(ctx.get(), digest) <= 0)
+      return false;
+  }
+
+  if (oaep_label_len != 0) {
+    // OpenSSL takes ownership of the label, so we need to create a copy.
+    void* label = OPENSSL_memdup(oaep_label, oaep_label_len);
+    CHECK_NOT_NULL(label);
+    if (0 >= EVP_PKEY_CTX_set0_rsa_oaep_label(ctx.get(), label,
+                                              oaep_label_len)) {
+      OPENSSL_free(label);
+      return false;
+    }
+  }
 
   size_t out_len = 0;
   if (EVP_PKEY_cipher(ctx.get(), nullptr, &out_len, data, len) <= 0)
@@ -5227,6 +5430,21 @@ void PublicKeyCipher::Cipher(const FunctionCallbackInfo<Value>& args) {
   uint32_t padding;
   if (!args[offset + 1]->Uint32Value(env->context()).To(&padding)) return;
 
+  const node::Utf8Value oaep_str(env->isolate(), args[offset + 2]);
+  const char* oaep_hash = args[offset + 2]->IsString() ? *oaep_str : nullptr;
+  const EVP_MD* digest = nullptr;
+  if (oaep_hash != nullptr) {
+    digest = EVP_get_digestbyname(oaep_hash);
+    if (digest == nullptr)
+      return THROW_ERR_OSSL_EVP_INVALID_DIGEST(env);
+  }
+
+  ArrayBufferViewContents<unsigned char> oaep_label;
+  if (!args[offset + 3]->IsUndefined()) {
+    CHECK(args[offset + 3]->IsArrayBufferView());
+    oaep_label.Read(args[offset + 3].As<ArrayBufferView>());
+  }
+
   AllocatedBuffer out;
 
   ClearErrorOnReturn clear_error_on_return;
@@ -5235,6 +5453,9 @@ void PublicKeyCipher::Cipher(const FunctionCallbackInfo<Value>& args) {
       env,
       pkey,
       padding,
+      digest,
+      oaep_label.data(),
+      oaep_label.length(),
       buf.data(),
       buf.length(),
       &out);
@@ -6015,7 +6236,7 @@ struct ScryptJob : public CryptoJob {
   uint32_t N;
   uint32_t r;
   uint32_t p;
-  uint32_t maxmem;
+  uint64_t maxmem;
   CryptoErrorVector errors;
 
   inline explicit ScryptJob(Environment* env) : CryptoJob(env) {}
@@ -6070,7 +6291,7 @@ void Scrypt(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[3]->IsUint32());  // N
   CHECK(args[4]->IsUint32());  // r
   CHECK(args[5]->IsUint32());  // p
-  CHECK(args[6]->IsUint32());  // maxmem
+  CHECK(args[6]->IsNumber());  // maxmem
   CHECK(args[7]->IsObject() || args[7]->IsUndefined());  // wrap object
   std::unique_ptr<ScryptJob> job(new ScryptJob(env));
   job->keybuf_data = reinterpret_cast<unsigned char*>(Buffer::Data(args[0]));
@@ -6080,12 +6301,13 @@ void Scrypt(const FunctionCallbackInfo<Value>& args) {
   job->N = args[3].As<Uint32>()->Value();
   job->r = args[4].As<Uint32>()->Value();
   job->p = args[5].As<Uint32>()->Value();
-  job->maxmem = args[6].As<Uint32>()->Value();
+  Local<Context> ctx = env->isolate()->GetCurrentContext();
+  job->maxmem = static_cast<uint64_t>(args[6]->IntegerValue(ctx).ToChecked());
   if (!job->Validate()) {
     // EVP_PBE_scrypt() does not always put errors on the error stack
     // and therefore ToResult() may or may not return an exception
     // object.  Return a sentinel value to inform JS land it should
-    // throw an ERR_CRYPTO_SCRYPT_PARAMETER_ERROR on our behalf.
+    // throw an ERR_CRYPTO_SCRYPT_INVALID_PARAMETER on our behalf.
     auto result = job->ToResult();
     if (result->IsUndefined()) result = Null(args.GetIsolate());
     return args.GetReturnValue().Set(result);

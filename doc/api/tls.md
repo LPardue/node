@@ -68,12 +68,12 @@ Where:
 
 <!-- type=misc -->
 
-The term "[Forward Secrecy]" or "Perfect Forward Secrecy" describes a feature of
-key-agreement (i.e., key-exchange) methods. That is, the server and client keys
-are used to negotiate new temporary keys that are used specifically and only for
-the current communication session. Practically, this means that even if the
-server's private key is compromised, communication can only be decrypted by
-eavesdroppers if the attacker manages to obtain the key-pair specifically
+The term "[Forward Secrecy][]" or "Perfect Forward Secrecy" describes a feature
+of key-agreement (i.e., key-exchange) methods. That is, the server and client
+keys are used to negotiate new temporary keys that are used specifically and
+only for the current communication session. Practically, this means that even
+if the server's private key is compromised, communication can only be decrypted
+by eavesdroppers if the attacker manages to obtain the key-pair specifically
 generated for the session.
 
 Perfect Forward Secrecy is achieved by randomly generating a key pair for
@@ -83,8 +83,8 @@ all sessions). Methods implementing this technique are called "ephemeral".
 Currently two methods are commonly used to achieve Perfect Forward Secrecy (note
 the character "E" appended to the traditional abbreviations):
 
-* [DHE] - An ephemeral version of the Diffie Hellman key-agreement protocol.
-* [ECDHE] - An ephemeral version of the Elliptic Curve Diffie Hellman
+* [DHE][] - An ephemeral version of the Diffie Hellman key-agreement protocol.
+* [ECDHE][] - An ephemeral version of the Elliptic Curve Diffie Hellman
   key-agreement protocol.
 
 Ephemeral methods may have some performance drawbacks, because key generation
@@ -102,7 +102,7 @@ openssl dhparam -outform PEM -out dhparam.pem 2048
 If using Perfect Forward Secrecy using `ECDHE`, Diffie-Hellman parameters are
 not required and a default ECDHE curve will be used. The `ecdhCurve` property
 can be used when creating a TLS Server to specify the list of names of supported
-curves to use, see [`tls.createServer()`] for more info.
+curves to use, see [`tls.createServer()`][] for more info.
 
 Perfect Forward Secrecy was optional up to TLSv1.2, but it is not optional for
 TLSv1.3, because all TLSv1.3 cipher suites use ECDHE.
@@ -279,8 +279,8 @@ node server.js
 
 The default can also be replaced on a per client or server basis using the
 `ciphers` option from [`tls.createSecureContext()`][], which is also available
-in [`tls.createServer()`], [`tls.connect()`], and when creating new
-[`tls.TLSSocket`]s.
+in [`tls.createServer()`][], [`tls.connect()`][], and when creating new
+[`tls.TLSSocket`][]s.
 
 The ciphers list can contain a mixture of TLSv1.3 cipher suite names, the ones
 that start with `'TLS_'`, and specifications for TLSv1.2 and below cipher
@@ -303,24 +303,25 @@ of an application. The `--tls-cipher-list` switch and `ciphers` option should by
 used only if absolutely necessary.
 
 The default cipher suite prefers GCM ciphers for [Chrome's 'modern
-cryptography' setting] and also prefers ECDHE and DHE ciphers for Perfect
+cryptography' setting][] and also prefers ECDHE and DHE ciphers for Perfect
 Forward Secrecy, while offering *some* backward compatibility.
 
 128 bit AES is preferred over 192 and 256 bit AES in light of [specific
-attacks affecting larger AES key sizes].
+attacks affecting larger AES key sizes][].
 
 Old clients that rely on insecure and deprecated RC4 or DES-based ciphers
 (like Internet Explorer 6) cannot complete the handshaking process with
 the default configuration. If these clients _must_ be supported, the
-[TLS recommendations] may offer a compatible cipher suite. For more details
+[TLS recommendations][] may offer a compatible cipher suite. For more details
 on the format, see the OpenSSL [cipher list format][] documentation.
 
 There are only 5 TLSv1.3 cipher suites:
-- `'TLS_AES_256_GCM_SHA384'`
-- `'TLS_CHACHA20_POLY1305_SHA256'`
-- `'TLS_AES_128_GCM_SHA256'`
-- `'TLS_AES_128_CCM_SHA256'`
-- `'TLS_AES_128_CCM_8_SHA256'`
+
+* `'TLS_AES_256_GCM_SHA384'`
+* `'TLS_CHACHA20_POLY1305_SHA256'`
+* `'TLS_AES_128_GCM_SHA256'`
+* `'TLS_AES_128_CCM_SHA256'`
+* `'TLS_AES_128_CCM_8_SHA256'`
 
 The first 3 are enabled by default. The last 2 `CCM`-based suites are supported
 by TLSv1.3 because they may be more performant on constrained systems, but they
@@ -331,8 +332,9 @@ are not enabled by default since they offer less security.
 added: v0.3.2
 -->
 
-The `tls.Server` class is a subclass of `net.Server` that accepts encrypted
-connections using TLS or SSL.
+* Extends: {net.Server}
+
+Accepts encrypted connections using TLS or SSL.
 
 ### Event: 'keylog'
 <!-- YAML
@@ -413,7 +415,7 @@ The typical flow of an OCSP Request is as follows:
 2. Server receives the request and emits the `'OCSPRequest'` event, calling the
    listener if registered.
 3. Server extracts the OCSP URL from either the `certificate` or `issuer` and
-   performs an [OCSP request] to the CA.
+   performs an [OCSP request][] to the CA.
 4. Server receives `'OCSPResponse'` from the CA and sends it back to the client
    via the `callback` argument
 5. Client validates the response and either destroys the socket or performs a
@@ -426,7 +428,7 @@ via the `ca` option when establishing the TLS connection.)
 Listening for this event will have an effect only on connections established
 after the addition of the event listener.
 
-An npm module like [asn1.js] may be used to parse the certificates.
+An npm module like [asn1.js][] may be used to parse the certificates.
 
 ### Event: 'resumeSession'
 <!-- YAML
@@ -528,7 +530,7 @@ Returns the bound address, the address family name, and port of the
 server as reported by the operating system. See [`net.Server.address()`][] for
 more information.
 
-### server.close([callback])
+### server.close(\[callback\])
 <!-- YAML
 added: v0.3.2
 -->
@@ -601,8 +603,10 @@ See [Session Resumption][] for more information.
 added: v0.11.4
 -->
 
-The `tls.TLSSocket` is a subclass of [`net.Socket`][] that performs transparent
-encryption of written data and all required TLS negotiation.
+* Extends: {net.Socket}
+
+Performs transparent encryption of written data and all required TLS
+negotiation.
 
 Instances of `tls.TLSSocket` implement the duplex [Stream][] interface.
 
@@ -610,7 +614,7 @@ Methods that return TLS connection metadata (e.g.
 [`tls.TLSSocket.getPeerCertificate()`][] will only return data while the
 connection is open.
 
-### new tls.TLSSocket(socket[, options])
+### new tls.TLSSocket(socket\[, options\])
 <!-- YAML
 added: v0.11.4
 changes:
@@ -835,7 +839,7 @@ Returns an object containing information on the negotiated cipher suite.
 For example: `{ name: 'AES256-SHA', version: 'TLSv1.2' }`.
 
 See
-[OpenSSL](https://www.openssl.org/docs/man1.1.1/man3/SSL_CIPHER_get_name.html)
+[SSL_CIPHER_get_name](https://www.openssl.org/docs/man1.1.1/man3/SSL_CIPHER_get_name.html)
 for more information.
 
 ### tlsSocket.getEphemeralKeyInfo()
@@ -871,7 +875,7 @@ provided by SSL/TLS is not desired or is not enough.
 Corresponds to the `SSL_get_finished` routine in OpenSSL and may be used
 to implement the `tls-unique` channel binding from [RFC 5929][].
 
-### tlsSocket.getPeerCertificate([detailed])
+### tlsSocket.getPeerCertificate(\[detailed\])
 <!-- YAML
 added: v0.11.4
 -->
@@ -928,6 +932,7 @@ The certificate may contain information about the public key, depending on
 the key type.
 
 For RSA keys, the following properties may be defined:
+
 * `bits` {number} The RSA bit size. Example: `1024`.
 * `exponent` {string} The RSA exponent, as a string in hexadecimal number
   notation. Example: `'0x010001'`.
@@ -936,6 +941,7 @@ For RSA keys, the following properties may be defined:
 * `pubkey` {Buffer} The public key.
 
 For EC keys, the following properties may be defined:
+
 * `pubkey` {Buffer} The public key.
 * `bits` {number} The key size in bits. Example: `256`.
 * `asn1Curve` {string} (Optional) The ASN.1 name of the OID of the elliptic
@@ -947,6 +953,7 @@ For EC keys, the following properties may be defined:
   `'P-256'`.
 
 Example certificate:
+
 ```text
 { subject:
    { OU: [ 'Domain Control Validated', 'PositiveSSL Wildcard' ],
@@ -1011,8 +1018,7 @@ Protocol versions are:
 * `'TLSv1.2'`
 * `'TLSv1.3'`
 
-See <https://www.openssl.org/docs/man1.1.1/man3/SSL_get_version.html> for more
-information.
+See the OpenSSL [`SSL_get_version`][] documentation for more information.
 
 ### tlsSocket.getSession()
 <!-- YAML
@@ -1030,6 +1036,18 @@ See [Session Resumption][] for more information.
 
 Note: `getSession()` works only for TLSv1.2 and below. For TLSv1.3, applications
 must use the [`'session'`][] event (it also works for TLSv1.2 and below).
+
+### tlsSocket.getSharedSigalgs()
+<!-- YAML
+added: v12.11.0
+-->
+
+* Returns: {Array} List of signature algorithms shared between the server and
+the client in the order of decreasing preference.
+
+See
+[SSL_get_shared_sigalgs](https://www.openssl.org/docs/man1.1.1/man3/SSL_get_shared_sigalgs.html)
+for more information.
 
 ### tlsSocket.getTLSTicket()
 <!-- YAML
@@ -1174,10 +1192,13 @@ the checks done with additional verification.
 This function is only called if the certificate passed all other checks, such as
 being issued by trusted CA (`options.ca`).
 
-## tls.connect(options[, callback])
+## tls.connect(options\[, callback\])
 <!-- YAML
 added: v0.11.3
 changes:
+  - version: v12.9.0
+    pr-url: https://github.com/nodejs/node/pull/27836
+    description: Support the `allowHalfOpen` option.
   - version: v12.4.0
     pr-url: https://github.com/nodejs/node/pull/27816
     description: The `hints` option is now supported.
@@ -1207,7 +1228,7 @@ changes:
   * `host` {string} Host the client should connect to. **Default:**
     `'localhost'`.
   * `port` {number} Port the client should connect to.
-  * `path` {string} Creates unix socket connection to path. If this option is
+  * `path` {string} Creates Unix socket connection to path. If this option is
     specified, `host` and `port` are ignored.
   * `socket` {stream.Duplex} Establish secure connection on a given socket
     rather than creating a new socket. Typically, this is an instance of
@@ -1218,6 +1239,10 @@ changes:
     Connection/disconnection/destruction of `socket` is the user's
     responsibility; calling `tls.connect()` will not cause `net.connect()` to be
     called.
+  * `allowHalfOpen` {boolean} If the `socket` option is missing, indicates
+    whether or not to allow the internally created socket to be half-open,
+    otherwise the option is ignored. See the `allowHalfOpen` option of
+    [`net.Socket`][] for details. **Default:** `false`.
   * `rejectUnauthorized` {boolean} If not `false`, the server certificate is
     verified against the list of supplied CAs. An `'error'` event is emitted if
     verification fails; `err.code` contains the OpenSSL error code. **Default:**
@@ -1297,7 +1322,7 @@ socket.on('end', () => {
 });
 ```
 
-## tls.connect(path[, options][, callback])
+## tls.connect(path\[, options\]\[, callback\])
 <!-- YAML
 added: v0.11.3
 -->
@@ -1312,7 +1337,7 @@ as an argument instead of an option.
 
 A path option, if specified, will take precedence over the path argument.
 
-## tls.connect(port[, host][, options][, callback])
+## tls.connect(port\[, host\]\[, options\]\[, callback\])
 <!-- YAML
 added: v0.11.3
 -->
@@ -1329,10 +1354,18 @@ as arguments instead of options.
 A port or host option, if specified, will take precedence over any port or host
 argument.
 
-## tls.createSecureContext([options])
+## tls.createSecureContext(\[options\])
 <!-- YAML
 added: v0.11.13
 changes:
+  - version: v12.12.0
+    pr-url: https://github.com/nodejs/node/pull/28973
+    description: Added `privateKeyIdentifier` and `privateKeyEngine` options
+                 to get private key from an OpenSSL engine.
+  - version: v12.11.0
+    pr-url: https://github.com/nodejs/node/pull/29598
+    description: Added `sigalgs` option to override supported signature
+                 algorithms.
   - version: v12.0.0
     pr-url: https://github.com/nodejs/node/pull/26209
     description: TLSv1.3 support added.
@@ -1383,7 +1416,7 @@ changes:
     provided.
     For PEM encoded certificates, supported types are "TRUSTED CERTIFICATE",
     "X509 CERTIFICATE", and "CERTIFICATE".
-    See also [`tls.rootCertificates`].
+    See also [`tls.rootCertificates`][].
   * `cert` {string|string[]|Buffer|Buffer[]} Cert chains in PEM format. One cert
     chain should be provided per private key. Each cert chain should consist of
     the PEM formatted certificate for a provided private `key`, followed by the
@@ -1393,6 +1426,12 @@ changes:
     order as their private keys in `key`. If the intermediate certificates are
     not provided, the peer will not be able to validate the certificate, and the
     handshake will fail.
+  * `sigalgs` {string} Colon-separated list of supported signature algorithms.
+    The list can contain digest algorithms (`SHA256`, `MD5` etc.), public key
+    algorithms (`RSA-PSS`, `ECDSA` etc.), combination of both (e.g
+    'RSA+SHA384') or TLS v1.3 scheme names (e.g. `rsa_pss_pss_sha512`).
+    See [OpenSSL man pages](https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_set1_sigalgs_list.html)
+    for more info.
   * `ciphers` {string} Cipher suite specification, replacing the default. For
     more information, see [modifying the default cipher suite][]. Permitted
     ciphers can be obtained via [`tls.getCiphers()`][]. Cipher names must be
@@ -1413,7 +1452,7 @@ changes:
     curve automatically. Use [`crypto.getCurves()`][] to obtain a list of
     available curve names. On recent releases, `openssl ecparam -list_curves`
     will also display the name and description of each available elliptic curve.
-    **Default:** [`tls.DEFAULT_ECDH_CURVE`].
+    **Default:** [`tls.DEFAULT_ECDH_CURVE`][].
   * `honorCipherOrder` {boolean} Attempt to use the server's cipher suite
     preferences instead of the client's. When `true`, causes
     `SSL_OP_CIPHER_SERVER_PREFERENCE` to be set in `secureOptions`, see
@@ -1422,16 +1461,23 @@ changes:
     PEM allows the option of private keys being encrypted. Encrypted keys will
     be decrypted with `options.passphrase`. Multiple keys using different
     algorithms can be provided either as an array of unencrypted key strings or
-    buffers, or an array of objects in the form `{pem: <string|buffer>[,
-    passphrase: <string>]}`. The object form can only occur in an array.
-    `object.passphrase` is optional. Encrypted keys will be decrypted with
-    `object.passphrase` if provided, or `options.passphrase` if it is not.
+    buffers, or an array of objects in the form
+    `{pem: <string|buffer>[, passphrase: <string>]}`. The object form can only
+    occur in an array. `object.passphrase` is optional. Encrypted keys will be
+    decrypted with `object.passphrase` if provided, or `options.passphrase` if
+    it is not.
+  * `privateKeyEngine` {string} Name of an OpenSSL engine to get private key
+    from. Should be used together with `privateKeyIdentifier`.
+  * `privateKeyIdentifier` {string} Identifier of a private key managed by
+    an OpenSSL engine. Should be used together with `privateKeyEngine`.
+    Should not be set together with `key`, because both options define a
+    private key in different ways.
   * `maxVersion` {string} Optionally set the maximum TLS version to allow. One
-    of `TLSv1.3`, `TLSv1.2'`, `'TLSv1.1'`, or `'TLSv1'`. Cannot be specified
+    of `'TLSv1.3'`, `'TLSv1.2'`, `'TLSv1.1'`, or `'TLSv1'`. Cannot be specified
     along with the `secureProtocol` option, use one or the other.
     **Default:** [`tls.DEFAULT_MAX_VERSION`][].
   * `minVersion` {string} Optionally set the minimum TLS version to allow. One
-    of `TLSv1.3`, `TLSv1.2'`, `'TLSv1.1'`, or `'TLSv1'`. Cannot be specified
+    of `'TLSv1.3'`, `'TLSv1.2'`, `'TLSv1.1'`, or `'TLSv1'`. Cannot be specified
     along with the `secureProtocol` option, use one or the other. It is not
     recommended to use less than TLSv1.2, but it may be required for
     interoperability.
@@ -1477,11 +1523,10 @@ and [`server.addContext()`][], but has no public methods.
 A key is *required* for ciphers that make use of certificates. Either `key` or
 `pfx` can be used to provide it.
 
-If the 'ca' option is not given, then Node.js will use the default
-publicly trusted list of CAs as given in
-<https://hg.mozilla.org/mozilla-central/raw-file/tip/security/nss/lib/ckfw/builtins/certdata.txt>.
+If the `ca` option is not given, then Node.js will default to using
+[Mozilla's publicly trusted list of CAs][].
 
-## tls.createServer([options][, secureConnectionListener])
+## tls.createServer(\[options\]\[, secureConnectionListener\])
 <!-- YAML
 added: v0.3.2
 changes:
@@ -1608,7 +1653,7 @@ added: v12.3.0
 
 An immutable array of strings representing the root certificates (in PEM format)
 used for verifying peer certificates. This is the default value of the `ca`
-option to [`tls.createSecureContext()`].
+option to [`tls.createSecureContext()`][].
 
 ## tls.DEFAULT_ECDH_CURVE
 <!-- YAML
@@ -1620,7 +1665,7 @@ changes:
 -->
 
 The default curve name to use for ECDH key agreement in a tls server. The
-default value is `'auto'`. See [`tls.createSecureContext()`] for further
+default value is `'auto'`. See [`tls.createSecureContext()`][] for further
 information.
 
 ## tls.DEFAULT_MAX_VERSION
@@ -1630,12 +1675,11 @@ added: v11.4.0
 
 * {string} The default value of the `maxVersion` option of
   [`tls.createSecureContext()`][]. It can be assigned any of the supported TLS
-  protocol versions, `TLSv1.3`, `TLSv1.2'`, `'TLSv1.1'`, or `'TLSv1'`.
+  protocol versions, `'TLSv1.3'`, `'TLSv1.2'`, `'TLSv1.1'`, or `'TLSv1'`.
   **Default:** `'TLSv1.3'`, unless changed using CLI options. Using
   `--tls-max-v1.2` sets the default to `'TLSv1.2`'.  Using `--tls-max-v1.3` sets
   the default to `'TLSv1.3'`. If multiple of the options are provided, the
   highest maximum is used.
-
 
 ## tls.DEFAULT_MIN_VERSION
 <!-- YAML
@@ -1650,7 +1694,6 @@ added: v11.4.0
   the default to `'TLSv1.1'`. Using `--tls-min-v1.3` sets the default to
   `'TLSv1.3'`. If multiple of the options are provided, the lowest minimum is
   used.
-
 
 ## Deprecated APIs
 
@@ -1699,7 +1742,7 @@ As with checking for the server
 event, `pair.cleartext.authorized` should be inspected to confirm whether the
 certificate used is properly authorized.
 
-### tls.createSecurePair([context][, isServer][, requestCert][, rejectUnauthorized][, options])
+### tls.createSecurePair(\[context\]\[, isServer\]\[, requestCert\]\[, rejectUnauthorized\]\[, options\])
 <!-- YAML
 added: v0.3.2
 deprecated: v0.11.3
@@ -1769,6 +1812,7 @@ where `secureSocket` has the same API as `pair.cleartext`.
 [`'session'`]: #tls_event_session
 [`--tls-cipher-list`]: cli.html#cli_tls_cipher_list_list
 [`NODE_OPTIONS`]: cli.html#cli_node_options_options
+[`SSL_get_version`]: https://www.openssl.org/docs/man1.1.1/man3/SSL_get_version.html
 [`crypto.getCurves()`]: crypto.html#crypto_crypto_getcurves
 [`net.createServer()`]: net.html#net_net_createserver_options_connectionlistener
 [`net.Server.address()`]: net.html#net_server_address
@@ -1799,6 +1843,7 @@ where `secureSocket` has the same API as `pair.cleartext`.
 [DHE]: https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange
 [ECDHE]: https://en.wikipedia.org/wiki/Elliptic_curve_Diffie%E2%80%93Hellman
 [Forward secrecy]: https://en.wikipedia.org/wiki/Perfect_forward_secrecy
+[Mozilla's publicly trusted list of CAs]: https://hg.mozilla.org/mozilla-central/raw-file/tip/security/nss/lib/ckfw/builtins/certdata.txt
 [OCSP request]: https://en.wikipedia.org/wiki/OCSP_stapling
 [OpenSSL Options]: crypto.html#crypto_openssl_options
 [Perfect Forward Secrecy]: #tls_perfect_forward_secrecy

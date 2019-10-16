@@ -28,6 +28,7 @@ const util = require('util');
 const vm = require('vm');
 const { previewEntries } = internalBinding('util');
 const { inspect } = util;
+const { MessageChannel } = require('worker_threads');
 
 assert.strictEqual(util.inspect(1), '1');
 assert.strictEqual(util.inspect(false), 'false');
@@ -196,6 +197,15 @@ assert(!/Object/.test(
                      '  buffer: ArrayBuffer { [Uint8Contents]: <01 02 03 04>,' +
                        ' byteLength: 4, x: 42 },\n' +
                      '  y: 1337\n}');
+}
+
+{
+  const ab = new ArrayBuffer(42);
+  assert.strictEqual(ab.byteLength, 42);
+  new MessageChannel().port1.postMessage(ab, [ ab ]);
+  assert.strictEqual(ab.byteLength, 0);
+  assert.strictEqual(util.inspect(ab),
+                     'ArrayBuffer { (detached), byteLength: 0 }');
 }
 
 // Now do the same checks but from a different context.
@@ -2103,6 +2113,21 @@ assert.strictEqual(
   assert.strictEqual(
     inspect(obj),
     "Array <[Object: null prototype] {}> { '0': 1, '1': 2, '2': 3 }"
+  );
+
+  StorageObject.prototype = Object.create(null);
+  Object.setPrototypeOf(StorageObject.prototype, Object.create(null));
+  Object.setPrototypeOf(
+    Object.getPrototypeOf(StorageObject.prototype),
+    Object.create(null)
+  );
+  assert.strictEqual(
+    util.inspect(new StorageObject()),
+    'StorageObject <Object <Object <[Object: null prototype] {}>>> {}'
+  );
+  assert.strictEqual(
+    util.inspect(new StorageObject(), { depth: 1 }),
+    'StorageObject <Object <Object <Complex prototype>>> {}'
   );
 }
 

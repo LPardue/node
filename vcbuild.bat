@@ -69,11 +69,13 @@ if "%1"=="" goto args-done
 if /i "%1"=="debug"         set config=Debug&goto arg-ok
 if /i "%1"=="release"       set config=Release&set ltcg=1&set cctest=1&goto arg-ok
 if /i "%1"=="clean"         set target=Clean&goto arg-ok
+if /i "%1"=="testclean"     set target=TestClean&goto arg-ok
 if /i "%1"=="ia32"          set target_arch=x86&goto arg-ok
 if /i "%1"=="x86"           set target_arch=x86&goto arg-ok
 if /i "%1"=="x64"           set target_arch=x64&goto arg-ok
 if /i "%1"=="arm64"         set target_arch=arm64&goto arg-ok
 if /i "%1"=="vs2017"        set target_env=vs2017&goto arg-ok
+if /i "%1"=="vs2019"        set target_env=vs2019&goto arg-ok
 if /i "%1"=="noprojgen"     set noprojgen=1&goto arg-ok
 if /i "%1"=="projgen"       set projgen=1&goto arg-ok
 if /i "%1"=="nobuild"       set nobuild=1&goto arg-ok
@@ -118,7 +120,7 @@ if /i "%1"=="lint-md-build" set lint_md_build=1&goto arg-ok
 if /i "%1"=="lint"          set lint_cpp=1&set lint_js=1&set lint_md=1&goto arg-ok
 if /i "%1"=="lint-ci"       set lint_cpp=1&set lint_js_ci=1&goto arg-ok
 if /i "%1"=="package"       set package=1&goto arg-ok
-if /i "%1"=="msi"           set msi=1&set licensertf=1&set download_arg="--download=all"&set i18n_arg=small-icu&goto arg-ok
+if /i "%1"=="msi"           set msi=1&set licensertf=1&set download_arg="--download=all"&set i18n_arg=full-icu&goto arg-ok
 if /i "%1"=="build-release" set build_release=1&set sign=1&goto arg-ok
 if /i "%1"=="upload"        set upload=1&goto arg-ok
 if /i "%1"=="small-icu"     set i18n_arg=%1&goto arg-ok
@@ -150,17 +152,13 @@ goto next-arg
 
 :args-done
 
-if "%*"=="lint" (
-  goto lint-cpp
-)
-
 if defined build_release (
   set config=Release
   set package=1
   set msi=1
   set licensertf=1
   set download_arg="--download=all"
-  set i18n_arg=small-icu
+  set i18n_arg=full-icu
   set projgen=1
   set cctest=1
   set ltcg=1
@@ -174,6 +172,10 @@ set "node_exe=%config%\node.exe"
 set "node_gyp_exe="%node_exe%" deps\npm\node_modules\node-gyp\bin\node-gyp"
 set "npm_exe="%~dp0%node_exe%" %~dp0deps\npm\bin\npm-cli.js"
 if "%target_env%"=="vs2017" set "node_gyp_exe=%node_gyp_exe% --msvs_version=2017"
+if "%target_env%"=="vs2019" set "node_gyp_exe=%node_gyp_exe% --msvs_version=2019"
+
+:: skip building if the only argument received was lint
+if "%*"=="lint" if exist "%node_exe%" goto lint-cpp
 
 if "%config%"=="Debug"      set configure_flags=%configure_flags% --debug
 if defined nosnapshot       set configure_flags=%configure_flags% --without-snapshot
@@ -197,6 +199,13 @@ if not exist "%~dp0deps\icu" goto no-depsicu
 if "%target%"=="Clean" echo deleting %~dp0deps\icu
 if "%target%"=="Clean" rmdir /S /Q %~dp0deps\icu
 :no-depsicu
+
+if "%target%"=="TestClean" (
+  echo deleting test/.tmp*
+  if exist "test\.tmp*" for /f %%i in ('dir /a:d /s /b test\.tmp*') do rmdir /S /Q "%%i"
+  goto exit
+)
+
 
 call tools\msvs\find_python.cmd
 if errorlevel 1 goto :exit
@@ -229,9 +238,9 @@ if %target_arch%==x86 if %msvs_host_arch%==x86 set vcvarsall_arg=x86
 
 @rem Look for Visual Studio 2017
 :vs-set-2017
-if defined target_env if "%target_env%" NEQ "vs2017" goto msbuild-not-found
+if defined target_env if "%target_env%" NEQ "vs2017" goto vs-set-2019
 echo Looking for Visual Studio 2017
-call tools\msvs\vswhere_usability_wrapper.cmd
+call tools\msvs\vswhere_usability_wrapper.cmd "[15.0,16.0)"
 if "_%VCINSTALLDIR%_" == "__" goto msbuild-not-found
 if defined msi (
   echo Looking for WiX installation for Visual Studio 2017...
@@ -260,6 +269,41 @@ if defined DEBUG_HELPER @ECHO ON
 echo Found MSVS version %VisualStudioVersion%
 set GYP_MSVS_VERSION=2017
 set PLATFORM_TOOLSET=v141
+goto msbuild-found
+
+@rem Look for Visual Studio 2019
+:vs-set-2019
+if defined target_env if "%target_env%" NEQ "vs2019" goto msbuild-not-found
+echo Looking for Visual Studio 2019
+call tools\msvs\vswhere_usability_wrapper.cmd "[16.0,17.0)"
+if "_%VCINSTALLDIR%_" == "__" goto msbuild-not-found
+if defined msi (
+  echo Looking for WiX installation for Visual Studio 2019...
+  if not exist "%WIX%\SDK\VS2017" (
+    echo Failed to find WiX install for Visual Studio 2019
+    echo VS2019 support for WiX is only present starting at version 3.11
+    goto msbuild-not-found
+  )
+  if not exist "%VCINSTALLDIR%\..\MSBuild\Microsoft\WiX" (
+    echo Failed to find the WiX Toolset Visual Studio 2019 Extension
+    goto msbuild-not-found
+  )
+)
+@rem check if VS2019 is already setup, and for the requested arch
+if "_%VisualStudioVersion%_" == "_16.0_" if "_%VSCMD_ARG_TGT_ARCH%_"=="_%target_arch%_" goto found_vs2019
+@rem need to clear VSINSTALLDIR for vcvarsall to work as expected
+set "VSINSTALLDIR="
+@rem prevent VsDevCmd.bat from changing the current working directory
+set "VSCMD_START_DIR=%CD%"
+set vcvars_call="%VCINSTALLDIR%\Auxiliary\Build\vcvarsall.bat" %vcvarsall_arg%
+echo calling: %vcvars_call%
+call %vcvars_call%
+if errorlevel 1 goto msbuild-not-found
+if defined DEBUG_HELPER @ECHO ON
+:found_vs2019
+echo Found MSVS version %VisualStudioVersion%
+set GYP_MSVS_VERSION=2019
+set PLATFORM_TOOLSET=v142
 goto msbuild-found
 
 :msbuild-not-found
@@ -596,7 +640,7 @@ if not defined lint_cpp goto lint-js
 if defined NODEJS_MAKE goto run-make-lint
 where make > NUL 2>&1 && make -v | findstr /C:"GNU Make" 1> NUL
 if "%ERRORLEVEL%"=="0" set "NODEJS_MAKE=make PYTHON=python" & goto run-make-lint
-where wsl > NUL 2>1
+where wsl > NUL 2>&1
 if "%ERRORLEVEL%"=="0" set "NODEJS_MAKE=wsl make" & goto run-make-lint
 echo Could not find GNU Make, needed for linting C/C++
 goto lint-js
@@ -644,6 +688,9 @@ goto exit
 
 :create-msvs-files-failed
 echo Failed to create vc project files.
+if %VCBUILD_PYTHON_VERSION%==3 (
+  echo Python 3 is not yet fully supported, to avoid issues Python 2 should be installed.
+)
 del .used_configure_flags
 goto exit
 

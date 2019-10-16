@@ -35,10 +35,11 @@ classes.
 added: v0.5.8
 -->
 
-The `tty.ReadStream` class is a subclass of [`net.Socket`][] that represents the
-readable side of a TTY. In normal circumstances [`process.stdin`][] will be the
-only `tty.ReadStream` instance in a Node.js process and there should be no
-reason to create additional instances.
+* Extends: {net.Socket}
+
+Represents the readable side of a TTY. In normal circumstances
+[`process.stdin`][] will be the only `tty.ReadStream` instance in a Node.js
+process and there should be no reason to create additional instances.
 
 ### readStream.isRaw
 <!-- YAML
@@ -78,10 +79,12 @@ terminal is disabled, including echoing input characters.
 added: v0.5.8
 -->
 
-The `tty.WriteStream` class is a subclass of [`net.Socket`][] that represents
-the writable side of a TTY. In normal circumstances, [`process.stdout`][] and
-[`process.stderr`][] will be the only `tty.WriteStream` instances created for a
-Node.js process and there should be no reason to create additional instances.
+* Extends: {net.Socket}
+
+Represents the writable side of a TTY. In normal circumstances,
+[`process.stdout`][] and [`process.stderr`][] will be the only
+`tty.WriteStream` instances created for a Node.js process and there
+should be no reason to create additional instances.
 
 ### Event: 'resize'
 <!-- YAML
@@ -99,23 +102,40 @@ process.stdout.on('resize', () => {
 });
 ```
 
-### writeStream.clearLine(dir)
+### writeStream.clearLine(dir\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28721
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `dir` {number}
   * `-1` - to the left from cursor
   * `1` - to the right from cursor
   * `0` - the entire line
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if the stream wishes for the calling code to wait
+  for the `'drain'` event to be emitted before continuing to write additional
+  data; otherwise `true`.
 
 `writeStream.clearLine()` clears the current line of this `WriteStream` in a
 direction identified by `dir`.
 
-### writeStream.clearScreenDown()
+### writeStream.clearScreenDown(\[callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28721
+    description: The stream's write() callback and return value are exposed.
 -->
+
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if the stream wishes for the calling code to wait
+  for the `'drain'` event to be emitted before continuing to write additional
+  data; otherwise `true`.
 
 `writeStream.clearScreenDown()` clears this `WriteStream` from the current
 cursor down.
@@ -128,18 +148,26 @@ added: v0.7.7
 A `number` specifying the number of columns the TTY currently has. This property
 is updated whenever the `'resize'` event is emitted.
 
-### writeStream.cursorTo(x, y)
+### writeStream.cursorTo(x\[, y\]\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28721
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `x` {number}
 * `y` {number}
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if the stream wishes for the calling code to wait
+  for the `'drain'` event to be emitted before continuing to write additional
+  data; otherwise `true`.
 
 `writeStream.cursorTo()` moves this `WriteStream`'s cursor to the specified
 position.
 
-### writeStream.getColorDepth([env])
+### writeStream.getColorDepth(\[env\])
 <!-- YAML
 added: v9.9.0
 -->
@@ -150,6 +178,7 @@ added: v9.9.0
 * Returns: {number}
 
 Returns:
+
 * `1` for 2,
 * `4` for 16,
 * `8` for 256,
@@ -177,6 +206,7 @@ Disabling color support is also possible by using the `NO_COLOR` and
 <!-- YAML
 added: v0.7.7
 -->
+
 * Returns: {number[]}
 
 `writeStream.getWindowSize()` returns the size of the [TTY](tty.html)
@@ -184,7 +214,7 @@ corresponding to this `WriteStream`. The array is of the type
 `[numColumns, numRows]` where `numColumns` and `numRows` represent the number
 of columns and rows in the corresponding [TTY](tty.html).
 
-### writeStream.hasColors([count][, env])
+### writeStream.hasColors(\[count\]\[, env\])
 <!-- YAML
 added: v11.13.0
 -->
@@ -220,13 +250,21 @@ added: v0.5.8
 
 A `boolean` that is always `true`.
 
-### writeStream.moveCursor(dx, dy)
+### writeStream.moveCursor(dx, dy\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28721
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `dx` {number}
 * `dy` {number}
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if the stream wishes for the calling code to wait
+  for the `'drain'` event to be emitted before continuing to write additional
+  data; otherwise `true`.
 
 `writeStream.moveCursor()` moves this `WriteStream`'s cursor *relative* to its
 current position.
@@ -251,7 +289,6 @@ The `tty.isatty()` method returns `true` if the given `fd` is associated with
 a TTY and `false` if it is not, including whenever `fd` is not a non-negative
 integer.
 
-[`net.Socket`]: net.html#net_class_net_socket
 [`process.stderr`]: process.html#process_process_stderr
 [`process.stdin`]: process.html#process_process_stdin
 [`process.stdout`]: process.html#process_process_stdout

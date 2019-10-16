@@ -401,7 +401,7 @@ function canCreateSymLink() {
                                  'System32', 'whoami.exe');
 
     try {
-      const output = execSync(`${whoamiPath} /priv`, { timout: 1000 });
+      const output = execSync(`${whoamiPath} /priv`, { timeout: 1000 });
       return output.includes('SeCreateSymbolicLinkPrivilege');
     } catch {
       return false;
@@ -651,6 +651,12 @@ function skipIfInspectorDisabled() {
   }
 }
 
+function skipIfInspectorEnabled() {
+  if (process.features.inspector) {
+    skip('V8 inspector is enabled');
+  }
+}
+
 function skipIfReportDisabled() {
   if (!process.config.variables.node_report) {
     skip('Diagnostic reporting is disabled');
@@ -783,6 +789,7 @@ module.exports = {
   skipIf32Bits,
   skipIfEslintMissing,
   skipIfInspectorDisabled,
+  skipIfInspectorEnabled,
   skipIfReportDisabled,
   skipIfWorker,
 

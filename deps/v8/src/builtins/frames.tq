@@ -102,7 +102,7 @@ macro LoadLengthFromAdapterFrame(implicit context: Context)(
 }
 
 operator '==' macro FrameTypeEquals(f1: FrameType, f2: FrameType): bool {
-  return WordEqual(f1, f2);
+  return TaggedEqual(f1, f2);
 }
 
 macro Cast<A: type>(implicit context: Context)(o: Frame): A labels CastError;
@@ -141,6 +141,7 @@ Cast<ArgumentsAdaptorFrame>(implicit context: Context)(f: Frame):
 // beginning of builtin code while the target value is still in the register
 // and the former should be used in slow paths in order to reduce register
 // pressure on the fast path.
+@export
 macro LoadTargetFromFrame(): JSFunction {
   return LoadFramePointer().function;
 }

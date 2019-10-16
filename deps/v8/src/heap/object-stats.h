@@ -5,8 +5,8 @@
 #ifndef V8_HEAP_OBJECT_STATS_H_
 #define V8_HEAP_OBJECT_STATS_H_
 
-#include "src/objects.h"
 #include "src/objects/code.h"
+#include "src/objects/objects.h"
 
 // These instance types do not exist for actual use but are merely introduced
 // for object stats tracing. In contrast to Code and FixedArray sub types
@@ -167,7 +167,10 @@ class ObjectStats {
 
   size_t tagged_fields_count_;
   size_t embedder_fields_count_;
+  size_t inobject_smi_fields_count_;
   size_t unboxed_double_fields_count_;
+  size_t boxed_double_fields_count_;
+  size_t string_data_count_;
   size_t raw_fields_count_;
 
   friend class ObjectStatsCollectorImpl;

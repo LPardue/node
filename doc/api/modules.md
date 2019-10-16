@@ -202,6 +202,40 @@ NODE_MODULES_PATHS(START)
 5. return DIRS
 ```
 
+Node.js allows packages loaded via
+`LOAD_NODE_MODULES` to explicitly declare which file paths to expose and how
+they should be interpreted. This expands on the control packages already had
+using the `main` field.
+
+With this feature enabled, the `LOAD_NODE_MODULES` changes are:
+
+```txt
+LOAD_NODE_MODULES(X, START)
+1. let DIRS = NODE_MODULES_PATHS(START)
+2. for each DIR in DIRS:
+   a. let FILE_PATH = RESOLVE_BARE_SPECIFIER(DIR, X)
+   a. LOAD_AS_FILE(FILE_PATH)
+   b. LOAD_AS_DIRECTORY(FILE_PATH)
+
+RESOLVE_BARE_SPECIFIER(DIR, X)
+1. Try to interpret X as a combination of name and subpath where the name
+   may have a @scope/ prefix and the subpath begins with a slash (`/`).
+2. If X matches this pattern and DIR/name/package.json is a file:
+   a. Parse DIR/name/package.json, and look for "exports" field.
+   b. If "exports" is null or undefined, GOTO 3.
+   c. Find the longest key in "exports" that the subpath starts with.
+   d. If no such key can be found, throw "not found".
+   e. let RESOLVED_URL =
+        PACKAGE_EXPORTS_TARGET_RESOLVE(pathToFileURL(DIR/name), exports[key],
+        subpath.slice(key.length)), as defined in the esm resolver.
+   f. return fileURLToPath(RESOLVED_URL)
+3. return DIR/X
+```
+
+`"exports"` is only honored when loading a package "name" as defined above. Any
+`"exports"` values within nested directories and packages must be declared by
+the `package.json` responsible for the "name".
+
 ## Caching
 
 <!--type=misc-->
@@ -296,7 +330,7 @@ provided to the `a.js` module.
 By the time `main.js` has loaded both modules, they're both finished.
 The output of this program would thus be:
 
-```txt
+```console
 $ node main.js
 main starting
 a starting
@@ -458,14 +492,14 @@ wrapper that looks like the following:
 
 By doing this, Node.js achieves a few things:
 
-- It keeps top-level variables (defined with `var`, `const` or `let`) scoped to
+* It keeps top-level variables (defined with `var`, `const` or `let`) scoped to
 the module rather than the global object.
-- It helps to provide some global-looking variables that are actually specific
-to the module, such as:
-  - The `module` and `exports` objects that the implementor can use to export
-  values from the module.
-  - The convenience variables `__filename` and `__dirname`, containing the
-  module's absolute filename and directory path.
+* It helps to provide some global-looking variables that are actually specific
+  to the module, such as:
+  * The `module` and `exports` objects that the implementor can use to export
+    values from the module.
+  * The convenience variables `__filename` and `__dirname`, containing the
+    module's absolute filename and directory path.
 
 ## The module scope
 
@@ -661,7 +695,7 @@ Module {
      '/node_modules' ] }
 ```
 
-#### require.resolve(request[, options])
+#### require.resolve(request\[, options\])
 <!-- YAML
 added: v0.3.0
 changes:
@@ -936,11 +970,11 @@ added: v10.12.0
 deprecated: v12.2.0
 -->
 
+> Stability: 0 - Deprecated: Please use [`createRequire()`][] instead.
+
 * `filename` {string} Filename to be used to construct the relative require
   function.
 * Returns: {require} Require function
-
-> Stability: 0 - Deprecated: Please use [`createRequire()`][] instead.
 
 ```js
 const { createRequireFromPath } = require('module');
@@ -948,6 +982,36 @@ const requireUtil = createRequireFromPath('../src/utils/');
 
 // Require `../src/utils/some-tool`
 requireUtil('./some-tool');
+```
+
+### module.syncBuiltinESMExports()
+<!-- YAML
+added: v12.12.0
+-->
+
+The `module.syncBuiltinESMExports()` method updates all the live bindings for
+builtin ES Modules to match the properties of the CommonJS exports. It does
+not add or remove exported names from the ES Modules.
+
+```js
+const fs = require('fs');
+const { syncBuiltinESMExports } = require('module');
+
+fs.readFile = null;
+
+delete fs.readFileSync;
+
+fs.newAPI = function newAPI() {
+  // ...
+};
+
+syncBuiltinESMExports();
+
+import('fs').then((esmFS) => {
+  assert.strictEqual(esmFS.readFile, null);
+  assert.strictEqual('readFileSync' in fs, true);
+  assert.strictEqual(esmFS.newAPI, undefined);
+});
 ```
 
 [GLOBAL_FOLDERS]: #modules_loading_from_the_global_folders

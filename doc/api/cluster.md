@@ -41,7 +41,7 @@ if (cluster.isMaster) {
 
 Running Node.js will now share port 8000 between the workers:
 
-```txt
+```console
 $ node server.js
 Master 3596 is running
 Worker 4324 started
@@ -115,6 +115,8 @@ also be used for other use cases requiring worker processes.
 <!-- YAML
 added: v0.7.0
 -->
+
+* Extends: {EventEmitter}
 
 A `Worker` object contains all public information and method about a worker.
 In the master it can be obtained using `cluster.workers`. In a worker
@@ -334,7 +336,9 @@ added: v6.0.0
 
 * {boolean}
 
-Set by calling `.kill()` or `.disconnect()`. Until then, it is `undefined`.
+This property is `true` if the worker exited due to `.kill()` or
+`.disconnect()`. If the worker exited any other way, it is `false`. If the
+worker has not exited, it is `undefined`.
 
 The boolean [`worker.exitedAfterDisconnect`][] allows distinguishing between
 voluntary and accidental exit, the master may choose not to respawn a worker
@@ -411,7 +415,7 @@ if (cluster.isMaster) {
 }
 ```
 
-### worker.kill([signal='SIGTERM'])
+### worker.kill(\[signal='SIGTERM'\])
 <!-- YAML
 added: v0.9.12
 -->
@@ -452,7 +456,7 @@ Workers will call `process.exit(0)` if the `'disconnect'` event occurs
 on `process` and `.exitedAfterDisconnect` is not `true`. This protects against
 accidental disconnection.
 
-### worker.send(message[, sendHandle][, callback])
+### worker.send(message\[, sendHandle\]\[, callback\])
 <!-- YAML
 added: v0.7.0
 changes:
@@ -589,7 +593,7 @@ The `addressType` is one of:
 
 * `4` (TCPv4)
 * `6` (TCPv6)
-* `-1` (unix domain socket)
+* `-1` (Unix domain socket)
 * `'udp4'` or `'udp6'` (UDP v4 or v6)
 
 ## Event: 'message'
@@ -660,7 +664,7 @@ The `settings` object is the `cluster.settings` object at the time
 
 If accuracy is important, use `cluster.settings`.
 
-## cluster.disconnect([callback])
+## cluster.disconnect(\[callback\])
 <!-- YAML
 added: v0.7.7
 -->
@@ -678,7 +682,7 @@ finished.
 
 This can only be called from the master process.
 
-## cluster.fork([env])
+## cluster.fork(\[env\])
 <!-- YAML
 added: v0.6.0
 -->
@@ -773,7 +777,7 @@ the settings, including the default values.
 
 This object is not intended to be changed or set manually.
 
-## cluster.setupMaster([settings])
+## cluster.setupMaster(\[settings\])
 <!-- YAML
 added: v0.7.1
 changes:

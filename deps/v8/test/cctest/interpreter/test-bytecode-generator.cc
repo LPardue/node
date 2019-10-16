@@ -4,12 +4,12 @@
 
 #include <fstream>
 
-#include "src/v8.h"
+#include "src/init/v8.h"
 
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/bytecode-generator.h"
 #include "src/interpreter/interpreter.h"
-#include "src/objects-inl.h"
+#include "src/objects/objects-inl.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/interpreter/bytecode-expectations-printer.h"
 #include "test/cctest/test-feedback-vector.h"
@@ -131,21 +131,22 @@ std::string BuildActual(const BytecodeExpectationsPrinter& printer,
 }
 
 // inplace left trim
-static inline void ltrim(std::string& str) {
+static inline void ltrim(std::string& str) {  // NOLINT(runtime/references)
   str.erase(str.begin(),
             std::find_if(str.begin(), str.end(),
                          [](unsigned char ch) { return !std::isspace(ch); }));
 }
 
 // inplace right trim
-static inline void rtrim(std::string& str) {
+static inline void rtrim(std::string& str) {  // NOLINT(runtime/references)
   str.erase(std::find_if(str.rbegin(), str.rend(),
                          [](unsigned char ch) { return !std::isspace(ch); })
                 .base(),
             str.end());
 }
 
-static inline std::string trim(std::string& str) {
+static inline std::string trim(
+    std::string& str) {  // NOLINT(runtime/references)
   ltrim(str);
   rtrim(str);
   return str;
@@ -2650,8 +2651,6 @@ TEST(ClassAndSuperClass) {
 }
 
 TEST(PublicClassFields) {
-  bool old_flag = i::FLAG_harmony_public_fields;
-  i::FLAG_harmony_public_fields = true;
   InitializedIgnitionHandleScope scope;
   BytecodeExpectationsPrinter printer(CcTest::isolate());
 
@@ -2700,12 +2699,9 @@ TEST(PublicClassFields) {
 
   CHECK(CompareTexts(BuildActual(printer, snippets),
                      LoadGolden("PublicClassFields.golden")));
-  i::FLAG_harmony_public_fields = old_flag;
 }
 
 TEST(PrivateClassFields) {
-  bool old_flag = i::FLAG_harmony_private_fields;
-  i::FLAG_harmony_private_fields = true;
   InitializedIgnitionHandleScope scope;
   BytecodeExpectationsPrinter printer(CcTest::isolate());
 
@@ -2760,14 +2756,195 @@ TEST(PrivateClassFields) {
 
   CHECK(CompareTexts(BuildActual(printer, snippets),
                      LoadGolden("PrivateClassFields.golden")));
-  i::FLAG_harmony_private_fields = old_flag;
+}
+
+TEST(PrivateMethodDeclaration) {
+  bool old_methods_flag = i::FLAG_harmony_private_methods;
+  i::FLAG_harmony_private_methods = true;
+  InitializedIgnitionHandleScope scope;
+  BytecodeExpectationsPrinter printer(CcTest::isolate());
+
+  const char* snippets[] = {
+      "{\n"
+      "  class A {\n"
+      "    #a() { return 1; }\n"
+      "  }\n"
+      "}\n",
+
+      "{\n"
+      "  class D {\n"
+      "    #d() { return 1; }\n"
+      "  }\n"
+      "  class E extends D {\n"
+      "    #e() { return 2; }\n"
+      "  }\n"
+      "}\n",
+
+      "{\n"
+      "  class A { foo() {} }\n"
+      "  class C extends A {\n"
+      "    #m() { return super.foo; }\n"
+      "  }\n"
+      "}\n"};
+
+  CHECK(CompareTexts(BuildActual(printer, snippets),
+                     LoadGolden("PrivateMethodDeclaration.golden")));
+  i::FLAG_harmony_private_methods = old_methods_flag;
+}
+
+TEST(PrivateMethodAccess) {
+  bool old_methods_flag = i::FLAG_harmony_private_methods;
+  i::FLAG_harmony_private_methods = true;
+  InitializedIgnitionHandleScope scope;
+  BytecodeExpectationsPrinter printer(CcTest::isolate());
+  printer.set_wrap(false);
+  printer.set_test_function_name("test");
+
+  const char* snippets[] = {
+      "class A {\n"
+      "  #a() { return 1; }\n"
+      "  constructor() { return this.#a(); }\n"
+      "}\n"
+      "\n"
+      "var test = A;\n"
+      "new A;\n",
+
+      "class B {\n"
+      "  #b() { return 1; }\n"
+      "  constructor() { this.#b = 1; }\n"
+      "}\n"
+      "\n"
+      "var test = B;\n"
+      "new test;\n",
+
+      "class C {\n"
+      "  #c() { return 1; }\n"
+      "  constructor() { this.#c++; }\n"
+      "}\n"
+      "\n"
+      "var test = C;\n"
+      "new test;\n"};
+
+  CHECK(CompareTexts(BuildActual(printer, snippets),
+                     LoadGolden("PrivateMethodAccess.golden")));
+  i::FLAG_harmony_private_methods = old_methods_flag;
+}
+
+TEST(PrivateAccessorAccess) {
+  bool old_methods_flag = i::FLAG_harmony_private_methods;
+  i::FLAG_harmony_private_methods = true;
+  InitializedIgnitionHandleScope scope;
+  BytecodeExpectationsPrinter printer(CcTest::isolate());
+  printer.set_wrap(false);
+  printer.set_test_function_name("test");
+
+  const char* snippets[] = {
+      "class A {\n"
+      "  get #a() { return 1; }\n"
+      "  set #a(val) { }\n"
+      "\n"
+      "  constructor() {\n"
+      "    this.#a++;\n"
+      "    this.#a = 1;\n"
+      "    return this.#a;\n"
+      "  }\n"
+      "}\n"
+      "var test = A;\n"
+      "new test;\n",
+
+      "class B {\n"
+      "  get #b() { return 1; }\n"
+      "  constructor() { this.#b++; }\n"
+      "}\n"
+      "var test = B;\n"
+      "new test;\n",
+
+      "class C {\n"
+      "  set #c(val) { }\n"
+      "  constructor() { this.#c++; }\n"
+      "}\n"
+      "var test = C;\n"
+      "new test;\n",
+
+      "class D {\n"
+      "  get #d() { return 1; }\n"
+      "  constructor() { this.#d = 1; }\n"
+      "}\n"
+      "var test = D;\n"
+      "new test;\n",
+
+      "class E {\n"
+      "  set #e(val) { }\n"
+      "  constructor() { this.#e; }\n"
+      "}\n"
+      "var test = E;\n"
+      "new test;\n"};
+
+  CHECK(CompareTexts(BuildActual(printer, snippets),
+                     LoadGolden("PrivateAccessorAccess.golden")));
+  i::FLAG_harmony_private_methods = old_methods_flag;
+}
+
+TEST(PrivateAccessorDeclaration) {
+  bool old_methods_flag = i::FLAG_harmony_private_methods;
+  i::FLAG_harmony_private_methods = true;
+  InitializedIgnitionHandleScope scope;
+  BytecodeExpectationsPrinter printer(CcTest::isolate());
+
+  const char* snippets[] = {
+      "{\n"
+      "  class A {\n"
+      "    get #a() { return 1; }\n"
+      "    set #a(val) { }\n"
+      "  }\n"
+      "}\n",
+
+      "{\n"
+      "  class B {\n"
+      "    get #b() { return 1; }\n"
+      "  }\n"
+      "}\n",
+
+      "{\n"
+      "  class C {\n"
+      "    set #c(val) { }\n"
+      "  }\n"
+      "}\n",
+
+      "{\n"
+      "  class D {\n"
+      "    get #d() { return 1; }\n"
+      "    set #d(val) { }\n"
+      "  }\n"
+      "\n"
+      "  class E extends D {\n"
+      "    get #e() { return 2; }\n"
+      "    set #e(val) { }\n"
+      "  }\n"
+      "}\n",
+
+      "{\n"
+      "  class A { foo() {} }\n"
+      "  class C extends A {\n"
+      "    get #a() { return super.foo; }\n"
+      "  }\n"
+      "  new C();\n"
+      "}\n",
+
+      "{\n"
+      "  class A { foo(val) {} }\n"
+      "  class C extends A {\n"
+      "    set #a(val) { super.foo(val); }\n"
+      "  }\n"
+      "  new C();\n"
+      "}\n"};
+
+  CHECK(CompareTexts(BuildActual(printer, snippets),
+                     LoadGolden("PrivateAccessorDeclaration.golden")));
+  i::FLAG_harmony_private_methods = old_methods_flag;
 }
 
 TEST(StaticClassFields) {
-  bool old_flag = i::FLAG_harmony_public_fields;
-  bool old_static_flag = i::FLAG_harmony_static_fields;
-  i::FLAG_harmony_public_fields = true;
-  i::FLAG_harmony_static_fields = true;
   InitializedIgnitionHandleScope scope;
   BytecodeExpectationsPrinter printer(CcTest::isolate());
 
@@ -2826,8 +3003,6 @@ TEST(StaticClassFields) {
 
   CHECK(CompareTexts(BuildActual(printer, snippets),
                      LoadGolden("StaticClassFields.golden")));
-  i::FLAG_harmony_public_fields = old_flag;
-  i::FLAG_harmony_static_fields = old_static_flag;
 }
 
 TEST(Generators) {

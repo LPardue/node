@@ -66,11 +66,11 @@
       'defines': [ '__POSIX__' ],
     }],
     [ 'node_enable_d8=="true"', {
-      'dependencies': [ 'deps/v8/gypfiles/d8.gyp:d8' ],
+      'dependencies': [ 'tools/v8_gypfiles/d8.gyp:d8' ],
     }],
     [ 'node_use_bundled_v8=="true"', {
       'dependencies': [
-        'tools/v8_gypfiles/v8.gyp:v8_snapshot',
+        'tools/v8_gypfiles/v8.gyp:v8_maybe_snapshot',
         'tools/v8_gypfiles/v8.gyp:v8_libplatform',
       ],
     }],
@@ -104,14 +104,6 @@
         [ 'icu_small=="true"', {
           'defines': [ 'NODE_HAVE_SMALL_ICU=1' ],
       }]],
-    }],
-    [ 'node_use_bundled_v8=="true" and \
-       node_enable_v8_vtunejit=="true" and (target_arch=="x64" or \
-       target_arch=="ia32" or target_arch=="x32")', {
-      'defines': [ 'NODE_ENABLE_VTUNE_PROFILING' ],
-      'dependencies': [
-        'tools/v8_gypfiles/v8vtune.gyp:v8_vtune'
-      ],
     }],
     [ 'node_no_browser_globals=="true"', {
       'defines': [ 'NODE_NO_BROWSER_GLOBALS' ],
@@ -147,7 +139,6 @@
 
     [ 'node_shared_http_parser=="false"', {
       'dependencies': [
-        'deps/http_parser/http_parser.gyp:http_parser',
         'deps/llhttp/llhttp.gyp:llhttp'
       ],
     } ],
@@ -299,14 +290,31 @@
     [ 'OS=="sunos"', {
       'ldflags': [ '-Wl,-M,/usr/lib/ld/map.noexstk' ],
     }],
+    [ 'OS=="linux"', {
+      'libraries!': [
+        '-lrt'
+      ],
+    }],
     [ 'OS in "freebsd linux"', {
       'ldflags': [ '-Wl,-z,relro',
                    '-Wl,-z,now' ]
     }],
-    [ 'OS=="linux" and target_arch=="x64" and node_use_large_pages=="true"', {
+    [ 'OS=="linux" and '
+      'target_arch=="x64" and '
+      'node_use_large_pages=="true" and '
+      'node_use_large_pages_script_lld=="false"', {
       'ldflags': [
         '-Wl,-T',
         '<!(realpath src/large_pages/ld.implicit.script)',
+      ]
+    }],
+    [ 'OS=="linux" and '
+      'target_arch=="x64" and '
+      'node_use_large_pages=="true" and '
+      'node_use_large_pages_script_lld=="true"', {
+      'ldflags': [
+        '-Wl,-T',
+        '<!(realpath src/large_pages/ld.implicit.script.lld)',
       ]
     }],
     [ 'node_use_openssl=="true"', {

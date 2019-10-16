@@ -29,6 +29,7 @@ using v8::ArrayBuffer;
 using v8::Boolean;
 using v8::Context;
 using v8::EmbedderGraph;
+using v8::FinalizationGroup;
 using v8::Function;
 using v8::FunctionTemplate;
 using v8::HandleScope;
@@ -277,7 +278,7 @@ std::string GetExecPath(const std::vector<std::string>& argv) {
   uv_fs_t req;
   req.ptr = nullptr;
   if (0 ==
-      uv_fs_realpath(env->event_loop(), &req, exec_path.c_str(), nullptr)) {
+      uv_fs_realpath(nullptr, &req, exec_path.c_str(), nullptr)) {
     CHECK_NOT_NULL(req.ptr);
     exec_path = std::string(static_cast<char*>(req.ptr));
   }
@@ -339,7 +340,7 @@ Environment::Environment(IsolateData* isolate_data,
       [](void* arg) {
         Environment* env = static_cast<Environment*>(arg);
         if (!env->destroy_async_id_list()->empty())
-          AsyncWrap::DestroyAsyncIdsCallback(env, nullptr);
+          AsyncWrap::DestroyAsyncIdsCallback(env);
       },
       this);
 
@@ -385,11 +386,6 @@ Environment::Environment(IsolateData* isolate_data,
   CreateProperties();
 }
 
-CompileFnEntry::CompileFnEntry(Environment* env, uint32_t id)
-    : env(env), id(id) {
-  env->compile_fn_entries.insert(this);
-}
-
 Environment::~Environment() {
   isolate()->GetHeapProfiler()->RemoveBuildEmbedderGraphCallback(
       BuildEmbedderGraph, this);
@@ -397,12 +393,6 @@ Environment::~Environment() {
   // Make sure there are no re-used libuv wrapper objects.
   // CleanupHandles() should have removed all of them.
   CHECK(file_handle_read_wrap_freelist_.empty());
-
-  // dispose the Persistent references to the compileFunction
-  // wrappers used in the dynamic import callback
-  for (auto& entry : compile_fn_entries) {
-    delete entry;
-  }
 
   HandleScope handle_scope(isolate());
 
@@ -425,6 +415,7 @@ Environment::~Environment() {
   delete[] heap_statistics_buffer_;
   delete[] heap_space_statistics_buffer_;
   delete[] http_parser_buffer_;
+  delete[] heap_code_statistics_buffer_;
 
   TRACE_EVENT_NESTABLE_ASYNC_END0(
     TRACING_CATEGORY_NODE1(environment), "Environment", this);
@@ -577,7 +568,7 @@ void Environment::StopProfilerIdleNotifier() {
 }
 
 void Environment::PrintSyncTrace() const {
-  if (!options_->trace_sync_io) return;
+  if (!trace_sync_io_) return;
 
   HandleScope handle_scope(isolate());
 
@@ -652,42 +643,38 @@ void Environment::AtExit(void (*cb)(void* arg), void* arg) {
 void Environment::RunAndClearNativeImmediates() {
   TraceEventScope trace_scope(TRACING_CATEGORY_NODE1(environment),
                               "RunAndClearNativeImmediates", this);
-  size_t count = native_immediate_callbacks_.size();
-  if (count > 0) {
-    size_t ref_count = 0;
-    std::vector<NativeImmediateCallback> list;
-    native_immediate_callbacks_.swap(list);
-    auto drain_list = [&]() {
-      TryCatchScope try_catch(this);
-      for (auto it = list.begin(); it != list.end(); ++it) {
-        DebugSealHandleScope seal_handle_scope(isolate());
-        it->cb_(this, it->data_);
-        if (it->refed_)
-          ref_count++;
-        if (UNLIKELY(try_catch.HasCaught())) {
-          if (!try_catch.HasTerminated())
-            errors::TriggerUncaughtException(isolate(), try_catch);
+  size_t ref_count = 0;
+  size_t count = 0;
+  std::unique_ptr<NativeImmediateCallback> head;
+  head.swap(native_immediate_callbacks_head_);
+  native_immediate_callbacks_tail_ = nullptr;
 
-          // We are done with the current callback. Increase the counter so that
-          // the steps below make everything *after* the current item part of
-          // the new list.
-          it++;
+  auto drain_list = [&]() {
+    TryCatchScope try_catch(this);
+    for (; head; head = head->get_next()) {
+      DebugSealHandleScope seal_handle_scope(isolate());
+      count++;
+      if (head->is_refed())
+        ref_count++;
 
-          // Bail out, remove the already executed callbacks from list
-          // and set up a new TryCatch for the other pending callbacks.
-          std::move_backward(it, list.end(), list.begin() + (list.end() - it));
-          list.resize(list.end() - it);
-          return true;
-        }
+      head->Call(this);
+      if (UNLIKELY(try_catch.HasCaught())) {
+        if (!try_catch.HasTerminated())
+          errors::TriggerUncaughtException(isolate(), try_catch);
+
+        // We are done with the current callback. Move one iteration along,
+        // as if we had completed successfully.
+        head = head->get_next();
+        return true;
       }
-      return false;
-    };
-    while (drain_list()) {}
+    }
+    return false;
+  };
+  while (head && drain_list()) {}
 
-    DCHECK_GE(immediate_info()->count(), count);
-    immediate_info()->count_dec(count);
-    immediate_info()->ref_count_dec(ref_count);
-  }
+  DCHECK_GE(immediate_info()->count(), count);
+  immediate_info()->count_dec(count);
+  immediate_info()->ref_count_dec(ref_count);
 }
 
 
@@ -965,8 +952,8 @@ void MemoryTracker::TrackField(const char* edge_name,
   // identified and tracked here (based on their deleters),
   // but we may convert and track other known types here.
   BaseObject* obj = value.GetBaseObject();
-  if (obj != nullptr) {
-    this->TrackField("arg", obj);
+  if (obj != nullptr && obj->IsDoneInitializing()) {
+    TrackField("arg", obj);
   }
   CHECK_EQ(CurrentNode(), n);
   CHECK_NE(n->size_, 0);
@@ -1050,6 +1037,36 @@ char* Environment::Reallocate(char* data, size_t old_size, size_t size) {
   return new_data;
 }
 
+void Environment::AddArrayBufferAllocatorToKeepAliveUntilIsolateDispose(
+    std::shared_ptr<v8::ArrayBuffer::Allocator> allocator) {
+  if (keep_alive_allocators_ == nullptr) {
+    MultiIsolatePlatform* platform = isolate_data()->platform();
+    CHECK_NOT_NULL(platform);
+
+    keep_alive_allocators_ = new ArrayBufferAllocatorList();
+    platform->AddIsolateFinishedCallback(isolate(), [](void* data) {
+      delete static_cast<ArrayBufferAllocatorList*>(data);
+    }, static_cast<void*>(keep_alive_allocators_));
+  }
+
+  keep_alive_allocators_->insert(allocator);
+}
+
+bool Environment::RunWeakRefCleanup() {
+  isolate()->ClearKeptObjects();
+
+  while (!cleanup_finalization_groups_.empty()) {
+    Local<FinalizationGroup> fg =
+        cleanup_finalization_groups_.front().Get(isolate());
+    cleanup_finalization_groups_.pop_front();
+    if (!FinalizationGroup::Cleanup(fg).FromMaybe(false)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 void AsyncRequest::Install(Environment* env, void* data, uv_async_cb target) {
   CHECK_NULL(async_);
   env_ = env;
@@ -1087,6 +1104,8 @@ void BaseObject::DeleteMe(void* data) {
   BaseObject* self = static_cast<BaseObject*>(data);
   delete self;
 }
+
+bool BaseObject::IsDoneInitializing() const { return true; }
 
 Local<Object> BaseObject::WrappedObject() const {
   return object();

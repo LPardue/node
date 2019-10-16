@@ -100,20 +100,24 @@ class DebugOptions : public Options {
 class EnvironmentOptions : public Options {
  public:
   bool abort_on_uncaught_exception = false;
+  bool enable_source_maps = false;
+  bool experimental_json_modules = false;
   bool experimental_modules = false;
   std::string es_module_specifier_resolution;
   bool experimental_wasm_modules = false;
   std::string module_type;
   std::string experimental_policy;
+  std::string experimental_policy_integrity;
+  bool has_policy_integrity_string;
   bool experimental_repl_await = false;
   bool experimental_vm_modules = false;
   bool expose_internals = false;
   bool frozen_intrinsics = false;
   std::string heap_snapshot_signal;
-  std::string http_parser = "llhttp";
   bool no_deprecation = false;
   bool no_force_async_hooks_checks = false;
   bool no_warnings = false;
+  bool force_context_aware = false;
   bool pending_deprecation = false;
   bool preserve_symlinks = false;
   bool preserve_symlinks_main = false;
@@ -131,6 +135,7 @@ class EnvironmentOptions : public Options {
   bool heap_prof = false;
 #endif  // HAVE_INSPECTOR
   std::string redirect_warnings;
+  bool test_udp_no_try_send = false;
   bool throw_deprecation = false;
   bool trace_deprecation = false;
   bool trace_sync_io = false;
@@ -171,6 +176,7 @@ class PerIsolateOptions : public Options {
  public:
   std::shared_ptr<EnvironmentOptions> per_env { new EnvironmentOptions() };
   bool track_heap_objects = false;
+  bool no_node_snapshot = false;
 
 #ifdef NODE_REPORT
   bool report_uncaught_exception = false;

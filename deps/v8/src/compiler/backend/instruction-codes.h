@@ -27,8 +27,8 @@
 #define TARGET_ARCH_OPCODE_LIST(V)
 #define TARGET_ADDRESSING_MODE_LIST(V)
 #endif
-#include "src/globals.h"
-#include "src/utils.h"
+#include "src/compiler/write-barrier-kind.h"
+#include "src/utils/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -82,19 +82,19 @@ inline RecordWriteMode WriteBarrierKindToRecordWriteMode(
   V(ArchLookupSwitch)                     \
   V(ArchTableSwitch)                      \
   V(ArchNop)                              \
-  V(ArchDebugAbort)                       \
+  V(ArchAbortCSAAssert)                   \
   V(ArchDebugBreak)                       \
   V(ArchComment)                          \
   V(ArchThrowTerminator)                  \
   V(ArchDeoptimize)                       \
   V(ArchRet)                              \
-  V(ArchStackPointer)                     \
   V(ArchFramePointer)                     \
   V(ArchParentFramePointer)               \
   V(ArchTruncateDoubleToI)                \
   V(ArchStoreWithWriteBarrier)            \
   V(ArchStackSlot)                        \
   V(ArchWordPoisonOnSpeculation)          \
+  V(ArchStackPointerGreaterThan)          \
   V(Word32AtomicLoadInt8)                 \
   V(Word32AtomicLoadUint8)                \
   V(Word32AtomicLoadInt16)                \
@@ -237,6 +237,9 @@ enum FlagsCondition {
   kPositiveOrZero,
   kNegative
 };
+
+static constexpr FlagsCondition kStackPointerGreaterThanCondition =
+    kUnsignedGreaterThan;
 
 inline FlagsCondition NegateFlagsCondition(FlagsCondition condition) {
   return static_cast<FlagsCondition>(condition ^ 1);

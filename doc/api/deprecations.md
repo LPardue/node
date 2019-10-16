@@ -26,7 +26,7 @@ are explicitly labeled as such in the
 
 A Runtime deprecation will, by default, generate a process warning that will
 be printed to `stderr` the first time the deprecated API is used. When the
-`--throw-deprecation` command-line flag is used, a Runtime deprecation will
+[`--throw-deprecation`][] command-line flag is used, a Runtime deprecation will
 cause an error to be thrown.
 
 An End-of-Life deprecation is used when functionality is or will soon be removed
@@ -154,9 +154,10 @@ objects:
 * [`Buffer.from(string[, encoding])`][from_string_encoding] - Create a `Buffer`
   that copies `string`.
 
-As of v10.0.0, a deprecation warning is printed at runtime when
-`--pending-deprecation` is used or when the calling code is
-outside `node_modules` in order to better target developers, rather than users.
+Without `--pending-deprecation`, runtime warnings occur only for code not in
+`node_modules`. This means there will not be deprecation warnings for
+`Buffer()` usage in dependencies. With `--pending-deprecation`, a runtime
+warning results no matter where the `Buffer()` usage occurs.
 
 <a id="DEP0006"></a>
 ### DEP0006: child\_process options.customFds
@@ -339,7 +340,7 @@ changes:
 Type: End-of-Life
 
 Calling an asynchronous function without a callback throws a `TypeError`
-in Node.js 10.0.0 onwards. (See <https://github.com/nodejs/node/pull/12562>.)
+in Node.js 10.0.0 onwards. See <https://github.com/nodejs/node/pull/12562>.
 
 <a id="DEP0014"></a>
 ### DEP0014: fs.read legacy String interface
@@ -1715,19 +1716,19 @@ Since Node.js versions 4.4.0 and 5.2.0, several modules only intended for
 internal usage were mistakenly exposed to user code through `require()`. These
 modules were:
 
-- `v8/tools/codemap`
-- `v8/tools/consarray`
-- `v8/tools/csvparser`
-- `v8/tools/logreader`
-- `v8/tools/profile_view`
-- `v8/tools/profile`
-- `v8/tools/SourceMap`
-- `v8/tools/splaytree`
-- `v8/tools/tickprocessor-driver`
-- `v8/tools/tickprocessor`
-- `node-inspect/lib/_inspect` (from 7.6.0)
-- `node-inspect/lib/internal/inspect_client` (from 7.6.0)
-- `node-inspect/lib/internal/inspect_repl` (from 7.6.0)
+* `v8/tools/codemap`
+* `v8/tools/consarray`
+* `v8/tools/csvparser`
+* `v8/tools/logreader`
+* `v8/tools/profile_view`
+* `v8/tools/profile`
+* `v8/tools/SourceMap`
+* `v8/tools/splaytree`
+* `v8/tools/tickprocessor-driver`
+* `v8/tools/tickprocessor`
+* `node-inspect/lib/_inspect` (from 7.6.0)
+* `node-inspect/lib/internal/inspect_client` (from 7.6.0)
+* `node-inspect/lib/internal/inspect_repl` (from 7.6.0)
 
 The `v8/*` modules do not have any exports, and if not imported in a specific
 order would in fact throw errors. As such there are virtually no legitimate use
@@ -1754,8 +1755,8 @@ changes:
 Type: End-of-Life
 
 The AsyncHooks Sensitive API was never documented and had various minor issues.
-(See <https://github.com/nodejs/node/issues/15572>.) Use the `AsyncResource`
-API instead.
+Use the `AsyncResource` API instead. See
+<https://github.com/nodejs/node/issues/15572>.
 
 <a id="DEP0086"></a>
 ### DEP0086: Remove runInAsyncIdScope
@@ -1774,13 +1775,15 @@ changes:
 Type: End-of-Life
 
 `runInAsyncIdScope` doesn't emit the `'before'` or `'after'` event and can thus
-cause a lot of issues. See <https://github.com/nodejs/node/issues/14328> for
-more details.
+cause a lot of issues. See <https://github.com/nodejs/node/issues/14328>.
 
 <a id="DEP0089"></a>
 ### DEP0089: require('assert')
 <!-- YAML
 changes:
+  - version: v12.8.0
+    pr-url: https://github.com/nodejs/node/pull/28892
+    description: Deprecation revoked.
   - version:
       - v9.9.0
       - v10.0.0
@@ -1788,11 +1791,11 @@ changes:
     description: Documentation-only deprecation.
 -->
 
-Type: Documentation-only
+Type: Deprecation revoked
 
-Importing assert directly is not recommended as the exposed functions will use
-loose equality checks. Use `require('assert').strict` instead. The API is the
-same as the legacy assert but it will always use strict equality checks.
+Importing assert directly was not recommended as the exposed functions use
+loose equality checks. The deprecation was revoked because use of the `assert`
+module is not discouraged, and the deprecation caused end user confusion.
 
 <a id="DEP0090"></a>
 ### DEP0090: Invalid GCM authentication tag lengths
@@ -1937,7 +1940,7 @@ to unrecoverable errors.
 
 Use [`asyncResource.runInAsyncScope()`][] API instead which provides a much
 safer, and more convenient, alternative. See
-<https://github.com/nodejs/node/pull/18513> for more details.
+<https://github.com/nodejs/node/pull/18513>.
 
 <a id="DEP0099"></a>
 ### DEP0099: async context-unaware node::MakeCallback C++ APIs
@@ -2000,7 +2003,7 @@ to be verified, no matter if it is set to true or not. Skipping the verification
 could lead to hard to find errors and crashes.
 
 <a id="DEP0103"></a>
-### DEP0103: process.binding('util').is[...] typechecks
+### DEP0103: process.binding('util').is\[...\] typechecks
 <!-- YAML
 changes:
   - version: v10.9.0
@@ -2473,16 +2476,20 @@ Module.createRequireFromPath() is deprecated. Please use
 ### DEP0131: Legacy HTTP parser
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/29589
+    description: This feature has been removed.
   - version: v12.3.0
     pr-url: https://github.com/nodejs/node/pull/27498
     description: Documentation-only.
 -->
 
-Type: Documentation-only
+Type: End-of-Life
 
 The legacy HTTP parser, used by default in versions of Node.js prior to 12.0.0,
-is deprecated. This deprecation applies to users of the
-[`--http-parser=legacy`][] command-line flag.
+is deprecated and has been removed in REPLACEME. Prior to REPLACEME, the
+`--http-parser=legacy` command-line flag could be used to revert to using the
+legacy parser.
 
 <a id="DEP0132"></a>
 ### DEP0132: worker.terminate() with callback
@@ -2498,8 +2505,51 @@ Type: Runtime
 Passing a callback to [`worker.terminate()`][] is deprecated. Use the returned
 `Promise` instead, or a listener to the worker’s `'exit'` event.
 
-[`--http-parser=legacy`]: cli.html#cli_http_parser_library
+<a id="DEP0133"></a>
+### DEP0133: http connection
+<!-- YAML
+changes:
+  - version: v12.12.0
+    pr-url: https://github.com/nodejs/node/pull/29015
+    description: Documentation-only deprecation.
+-->
+
+Type: Documentation-only
+
+Prefer [`response.socket`][] over [`response.connection`][] and
+[`request.socket`][] over [`request.connection`][].
+
+<a id="DEP0134"></a>
+### DEP0134: process._tickCallback
+<!-- YAML
+changes:
+  - version: v12.12.0
+    pr-url: https://github.com/nodejs/node/pull/29781
+    description: Documentation-only deprecation.
+-->
+Type: Documentation-only (supports [`--pending-deprecation`][])
+
+The `process._tickCallback` property was never documented as
+an officially supported API.
+
+<a id="DEP0135"></a>
+### DEP0135: `WriteStream.open()` and `ReadStream.open()` are internal
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/29061
+    description: Runtime deprecation.
+-->
+
+Type: Runtime
+
+[`WriteStream.open()`][] and [`ReadStream.open()`][] are undocumented internal
+APIs that do not make sense to use in userland. File streams should always be
+opened through their corresponding factory methods [`fs.createWriteStream()`][]
+and [`fs.createReadStream()`][]) or by passing a file descriptor in options.
+
 [`--pending-deprecation`]: cli.html#cli_pending_deprecation
+[`--throw-deprecation`]: cli.html#cli_throw_deprecation
 [`Buffer.allocUnsafeSlow(size)`]: buffer.html#buffer_class_method_buffer_allocunsafeslow_size
 [`Buffer.from(array)`]: buffer.html#buffer_class_method_buffer_from_array
 [`Buffer.from(buffer)`]: buffer.html#buffer_class_method_buffer_from_buffer
@@ -2508,10 +2558,12 @@ Passing a callback to [`worker.terminate()`][] is deprecated. Use the returned
 [`Decipher`]: crypto.html#crypto_class_decipher
 [`EventEmitter.listenerCount(emitter, eventName)`]: events.html#events_eventemitter_listenercount_emitter_eventname
 [`REPLServer.clearBufferedCommand()`]: repl.html#repl_replserver_clearbufferedcommand
+[`ReadStream.open()`]: fs.html#fs_class_fs_readstream
 [`Server.connections`]: net.html#net_server_connections
 [`Server.getConnections()`]: net.html#net_server_getconnections_callback
 [`Server.listen({fd: <number>})`]: net.html#net_server_listen_handle_backlog_callback
 [`SlowBuffer`]: buffer.html#buffer_class_slowbuffer
+[`WriteStream.open()`]: fs.html#fs_class_fs_writestream
 [`assert`]: assert.html
 [`asyncResource.runInAsyncScope()`]: async_hooks.html#async_hooks_asyncresource_runinasyncscope_fn_thisarg_args
 [`child_process`]: child_process.html
@@ -2534,6 +2586,8 @@ Passing a callback to [`worker.terminate()`][] is deprecated. Use the returned
 [`ecdh.setPublicKey()`]: crypto.html#crypto_ecdh_setpublickey_publickey_encoding
 [`emitter.listenerCount(eventName)`]: events.html#events_emitter_listenercount_eventname
 [`fs.access()`]: fs.html#fs_fs_access_path_mode_callback
+[`fs.createReadStream()`]: fs.html#fs_fs_createreadstream_path_options
+[`fs.createWriteStream()`]: fs.html#fs_fs_createwritestream_path_options
 [`fs.exists(path, callback)`]: fs.html#fs_fs_exists_path_callback
 [`fs.lchmod(path, mode, callback)`]: fs.html#fs_fs_lchmod_path_mode_callback
 [`fs.lchmodSync(path, mode)`]: fs.html#fs_fs_lchmodsync_path_mode
@@ -2552,6 +2606,10 @@ Passing a callback to [`worker.terminate()`][] is deprecated. Use the returned
 [`process.env`]: process.html#process_process_env
 [`punycode`]: punycode.html
 [`require.extensions`]: modules.html#modules_require_extensions
+[`request.socket`]: http.html#http_request_socket
+[`request.connection`]: http.html#http_request_connection
+[`response.socket`]: http.html#http_response_socket
+[`response.connection`]: http.html#http_response_connection
 [`script.createCachedData()`]: vm.html#vm_script_createcacheddata
 [`setInterval()`]: timers.html#timers_setinterval_callback_delay_args
 [`setTimeout()`]: timers.html#timers_settimeout_callback_delay_args

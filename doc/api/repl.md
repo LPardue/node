@@ -333,7 +333,8 @@ function myWriter(output) {
 added: v0.1.91
 -->
 
-The `repl.REPLServer` class inherits from the [`readline.Interface`][] class.
+* Extends: {readline.Interface}
+
 Instances of `repl.REPLServer` are created using the `repl.start()` method and
 *should not* be created directly using the JavaScript `new` keyword.
 
@@ -438,14 +439,14 @@ replServer.defineCommand('saybye', function saybye() {
 
 The new commands can then be used from within the REPL instance:
 
-```txt
+```console
 > .sayhello Node.js User
 Hello, Node.js User!
 > .saybye
 Goodbye!
 ```
 
-### replServer.displayPrompt([preserveCursor])
+### replServer.displayPrompt(\[preserveCursor\])
 <!-- YAML
 added: v0.1.91
 -->
@@ -475,17 +476,17 @@ buffered but not yet executed. This method is primarily intended to be
 called from within the action function for commands registered using the
 `replServer.defineCommand()` method.
 
-### replServer.parseREPLKeyword(keyword[, rest])
+### replServer.parseREPLKeyword(keyword\[, rest\])
 <!-- YAML
 added: v0.8.9
 deprecated: v9.0.0
 -->
 
+> Stability: 0 - Deprecated.
+
 * `keyword` {string} the potential keyword to parse and execute
 * `rest` {any} any parameters to the keyword command
 * Returns: {boolean}
-
-> Stability: 0 - Deprecated.
 
 An internal method used to parse and execute `REPLServer` keywords.
 Returns `true` if `keyword` is a valid keyword, otherwise `false`.
@@ -506,7 +507,7 @@ by default. However, this is not the case when creating a REPL
 programmatically. Use this method to initialize a history log file when working
 with REPL instances programmatically.
 
-## repl.start([options])
+## repl.start(\[options\])
 <!-- YAML
 added: v0.1.91
 changes:
@@ -600,17 +601,17 @@ undefined
 Various behaviors of the Node.js REPL can be customized using the following
 environment variables:
 
- - `NODE_REPL_HISTORY` - When a valid path is given, persistent REPL history
-   will be saved to the specified file rather than `.node_repl_history` in the
-   user's home directory. Setting this value to `''` (an empty string) will
-   disable persistent REPL history. Whitespace will be trimmed from the value.
-   On Windows platforms environment variables with empty values are invalid so
-   set this variable to one or more spaces to disable persistent REPL history.
- - `NODE_REPL_HISTORY_SIZE` - Controls how many lines of history will be
-   persisted if history is available. Must be a positive number.
-   **Default:** `1000`.
- - `NODE_REPL_MODE` - May be either `'sloppy'` or `'strict'`. **Default:**
-   `'sloppy'`, which will allow non-strict mode code to be run.
+* `NODE_REPL_HISTORY` - When a valid path is given, persistent REPL history
+  will be saved to the specified file rather than `.node_repl_history` in the
+  user's home directory. Setting this value to `''` (an empty string) will
+  disable persistent REPL history. Whitespace will be trimmed from the value.
+  On Windows platforms environment variables with empty values are invalid so
+  set this variable to one or more spaces to disable persistent REPL history.
+* `NODE_REPL_HISTORY_SIZE` - Controls how many lines of history will be
+  persisted if history is available. Must be a positive number.
+  **Default:** `1000`.
+* `NODE_REPL_MODE` - May be either `'sloppy'` or `'strict'`. **Default:**
+  `'sloppy'`, which will allow non-strict mode code to be run.
 
 ### Persistent History
 
@@ -696,7 +697,6 @@ For an example of running a REPL instance over [curl(1)][], see:
 [`domain`]: domain.html
 [`process.setUncaughtExceptionCaptureCallback()`]: process.html#process_process_setuncaughtexceptioncapturecallback_fn
 [`readline.InterfaceCompleter`]: readline.html#readline_use_of_the_completer_function
-[`readline.Interface`]: readline.html#readline_class_interface
 [`repl.ReplServer`]: #repl_class_replserver
 [`util.inspect()`]: util.html#util_util_inspect_object_options
 [curl(1)]: https://curl.haxx.se/docs/manpage.html

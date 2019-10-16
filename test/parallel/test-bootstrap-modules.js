@@ -1,4 +1,3 @@
-// Flags: --expose-internals
 'use strict';
 
 // This list must be computed before we require any modules to
@@ -17,11 +16,13 @@ const expectedModules = new Set([
   'Internal Binding contextify',
   'Internal Binding credentials',
   'Internal Binding fs',
+  'Internal Binding fs_dir',
   'Internal Binding inspector',
   'Internal Binding module_wrap',
   'Internal Binding native_module',
   'Internal Binding options',
   'Internal Binding process_methods',
+  'Internal Binding string_decoder',
   'Internal Binding task_queue',
   'Internal Binding timers',
   'Internal Binding trace_events',
@@ -41,6 +42,7 @@ const expectedModules = new Set([
   'NativeModule internal/encoding',
   'NativeModule internal/errors',
   'NativeModule internal/fixed_queue',
+  'NativeModule internal/fs/dir',
   'NativeModule internal/fs/utils',
   'NativeModule internal/idna',
   'NativeModule internal/linkedlist',
@@ -54,6 +56,7 @@ const expectedModules = new Set([
   'NativeModule internal/process/task_queues',
   'NativeModule internal/process/warning',
   'NativeModule internal/querystring',
+  'NativeModule internal/source_map/source_map_cache',
   'NativeModule internal/timers',
   'NativeModule internal/url',
   'NativeModule internal/util',
@@ -64,7 +67,6 @@ const expectedModules = new Set([
   'NativeModule path',
   'NativeModule timers',
   'NativeModule url',
-  'NativeModule util',
   'NativeModule vm',
 ]);
 

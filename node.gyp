@@ -21,7 +21,6 @@
     'node_use_openssl%': 'true',
     'node_shared_openssl%': 'false',
     'node_v8_options%': '',
-    'node_enable_v8_vtunejit%': 'false',
     'node_core_target_name%': 'node',
     'node_lib_target_name%': 'libnode',
     'node_intermediate_lib_type%': 'static_library',
@@ -31,7 +30,6 @@
       'lib/internal/bootstrap/node.js',
       'lib/internal/bootstrap/pre_execution.js',
       'lib/internal/per_context/primordials.js',
-      'lib/internal/per_context/setup.js',
       'lib/internal/per_context/domexception.js',
       'lib/async_hooks.js',
       'lib/assert.js',
@@ -123,8 +121,10 @@
       'lib/internal/fixed_queue.js',
       'lib/internal/freelist.js',
       'lib/internal/freeze_intrinsics.js',
+      'lib/internal/fs/dir.js',
       'lib/internal/fs/promises.js',
       'lib/internal/fs/read_file_context.js',
+      'lib/internal/fs/rimraf.js',
       'lib/internal/fs/streams.js',
       'lib/internal/fs/sync_write_stream.js',
       'lib/internal/fs/utils.js',
@@ -170,12 +170,15 @@
       'lib/internal/process/report.js',
       'lib/internal/process/task_queues.js',
       'lib/internal/querystring.js',
-      'lib/internal/readline.js',
+      'lib/internal/readline/utils.js',
       'lib/internal/repl.js',
       'lib/internal/repl/await.js',
       'lib/internal/repl/history.js',
       'lib/internal/repl/utils.js',
       'lib/internal/socket_list.js',
+      'lib/internal/source_map/prepare_stack_trace.js',
+      'lib/internal/source_map/source_map.js',
+      'lib/internal/source_map/source_map_cache.js',
       'lib/internal/test/binding.js',
       'lib/internal/timers.js',
       'lib/internal/tls.js',
@@ -195,7 +198,7 @@
       'lib/internal/v8_prof_processor.js',
       'lib/internal/validators.js',
       'lib/internal/stream_base_commons.js',
-      'lib/internal/vm/source_text_module.js',
+      'lib/internal/vm/module.js',
       'lib/internal/worker.js',
       'lib/internal/worker/io.js',
       'lib/internal/streams/lazy_transform.js',
@@ -223,7 +226,6 @@
       'deps/node-inspect/lib/internal/inspect_repl.js',
       'deps/acorn/acorn/dist/acorn.js',
       'deps/acorn/acorn-walk/dist/walk.js',
-      'deps/acorn-plugins/acorn-bigint/index.js',
       'deps/acorn-plugins/acorn-class-fields/index.js',
       'deps/acorn-plugins/acorn-numeric-separator/index.js',
       'deps/acorn-plugins/acorn-private-class-elements/index.js',
@@ -289,7 +291,7 @@
           '-Wl,-bnoerrmsg',
         ],
       }],
-      ['(OS=="linux" or OS=="mac") and llvm_version!=0', {
+      ['OS in ("linux", "mac") and llvm_version != "0.0"', {
         'libraries': ['-latomic'],
       }],
     ],
@@ -526,12 +528,12 @@
         'src/node_constants.cc',
         'src/node_contextify.cc',
         'src/node_credentials.cc',
+        'src/node_dir.cc',
         'src/node_domain.cc',
         'src/node_env_var.cc',
         'src/node_errors.cc',
         'src/node_file.cc',
-        'src/node_http_parser_llhttp.cc',
-        'src/node_http_parser_traditional.cc',
+        'src/node_http_parser.cc',
         'src/node_http2.cc',
         'src/node_i18n.cc',
         'src/node_main_instance.cc',
@@ -595,7 +597,6 @@
         'src/handle_wrap.h',
         'src/histogram.h',
         'src/histogram-inl.h',
-        'src/http_parser_adaptor.h',
         'src/js_stream.h',
         'src/memory_tracker.h',
         'src/memory_tracker-inl.h',
@@ -608,9 +609,9 @@
         'src/node_constants.h',
         'src/node_context_data.h',
         'src/node_contextify.h',
+        'src/node_dir.h',
         'src/node_errors.h',
         'src/node_file.h',
-        'src/node_http_parser_impl.h',
         'src/node_http2.h',
         'src/node_http2_state.h',
         'src/node_i18n.h',
@@ -662,7 +663,6 @@
         'src/util.h',
         'src/util-inl.h',
         # Dependency headers
-        'deps/http_parser/http_parser.h',
         'deps/v8/include/v8.h',
         # javascript files to make for an even more pleasant IDE experience
         '<@(library_files)',
@@ -688,6 +688,12 @@
       'msvs_disabled_warnings!': [4244],
 
       'conditions': [
+        [ 'node_shared=="true"', {
+          'sources': [
+            'src/node_snapshot_stub.cc',
+            'src/node_code_cache_stub.cc',
+          ]
+        }],
         [ 'node_shared=="true" and node_module_version!="" and OS!="win"', {
           'product_extension': '<(shlib_suffix)',
           'xcode_settings': {
@@ -813,7 +819,7 @@
             }],
           ],
         }],
-        [ 'node_use_large_pages=="true" and OS=="linux"', {
+        [ 'node_use_large_pages=="true" and OS in "linux freebsd mac"', {
           'defines': [ 'NODE_ENABLE_LARGE_CODE_PAGES=1' ],
           # The current implementation of Large Pages is under Linux.
           # Other implementations are possible but not currently supported.

@@ -232,13 +232,15 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
                        bool prevent_shutdown)
       : delegate_(std::move(delegate)), prevent_shutdown_(prevent_shutdown),
         retaining_context_(false) {
-    session_ = inspector->connect(1, this, StringView());
+    session_ = inspector->connect(CONTEXT_GROUP_ID, this, StringView());
     node_dispatcher_ = std::make_unique<protocol::UberDispatcher>(this);
     tracing_agent_ =
         std::make_unique<protocol::TracingAgent>(env, main_thread_);
     tracing_agent_->Wire(node_dispatcher_.get());
-    worker_agent_ = std::make_unique<protocol::WorkerAgent>(worker_manager);
-    worker_agent_->Wire(node_dispatcher_.get());
+    if (worker_manager) {
+      worker_agent_ = std::make_unique<protocol::WorkerAgent>(worker_manager);
+      worker_agent_->Wire(node_dispatcher_.get());
+    }
     runtime_agent_ = std::make_unique<protocol::RuntimeAgent>();
     runtime_agent_->Wire(node_dispatcher_.get());
   }
@@ -246,8 +248,10 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   ~ChannelImpl() override {
     tracing_agent_->disable();
     tracing_agent_.reset();  // Dispose before the dispatchers
-    worker_agent_->disable();
-    worker_agent_.reset();  // Dispose before the dispatchers
+    if (worker_agent_) {
+      worker_agent_->disable();
+      worker_agent_.reset();  // Dispose before the dispatchers
+    }
     runtime_agent_->disable();
     runtime_agent_.reset();  // Dispose before the dispatchers
   }
@@ -483,6 +487,11 @@ class NodeInspectorClient : public V8InspectorClient {
   }
 
   void maxAsyncCallStackDepthChanged(int depth) override {
+    if (waiting_for_sessions_disconnect_) {
+      // V8 isolate is mostly done and is only letting Inspector protocol
+      // clients gather data.
+      return;
+    }
     if (auto agent = env_->inspector_agent()) {
       if (depth == 0) {
         agent->DisableAsyncHook();
@@ -665,6 +674,9 @@ class NodeInspectorClient : public V8InspectorClient {
   }
 
   std::shared_ptr<WorkerManager> getWorkerManager() {
+    if (!is_main_) {
+      return nullptr;
+    }
     if (worker_manager_ == nullptr) {
       worker_manager_ =
           std::make_shared<WorkerManager>(getThreadHandle());
@@ -694,8 +706,7 @@ class NodeInspectorClient : public V8InspectorClient {
 
     MultiIsolatePlatform* platform = env_->isolate_data()->platform();
     while (shouldRunMessageLoop()) {
-      if (interface_ && hasConnectedSessions())
-        interface_->WaitForFrontendEvent();
+      if (interface_) interface_->WaitForFrontendEvent();
       while (platform->FlushForegroundTasks(env_->isolate())) {}
     }
     running_nested_loop_ = false;
@@ -815,6 +826,17 @@ std::unique_ptr<InspectorSession> Agent::Connect(
                                             prevent_shutdown);
   return std::unique_ptr<InspectorSession>(
       new SameThreadInspectorSession(session_id, client_));
+}
+
+std::unique_ptr<InspectorSession> Agent::ConnectToMainThread(
+    std::unique_ptr<InspectorSessionDelegate> delegate,
+    bool prevent_shutdown) {
+  CHECK_NOT_NULL(parent_handle_);
+  CHECK_NOT_NULL(client_);
+  auto thread_safe_delegate =
+      client_->getThreadHandle()->MakeDelegateThreadSafe(std::move(delegate));
+  return parent_handle_->Connect(std::move(thread_safe_delegate),
+                                 prevent_shutdown);
 }
 
 void Agent::WaitForDisconnect() {
@@ -964,7 +986,11 @@ void Agent::SetParentHandle(
 
 std::unique_ptr<ParentInspectorHandle> Agent::GetParentHandle(
     int thread_id, const std::string& url) {
-  return client_->getWorkerManager()->NewParentHandle(thread_id, url);
+  if (!parent_handle_) {
+    return client_->getWorkerManager()->NewParentHandle(thread_id, url);
+  } else {
+    return parent_handle_->NewParentInspectorHandle(thread_id, url);
+  }
 }
 
 void Agent::WaitForConnect() {

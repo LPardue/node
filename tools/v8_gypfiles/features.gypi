@@ -102,9 +102,6 @@
     # Sets -dENABLE_GDB_JIT_INTERFACE.
     'v8_enable_gdbjit%': 0,
 
-    # Sets -dENABLE_VTUNE_JIT_INTERFACE.
-    'v8_enable_vtunejit%': 0,
-
     # Currently set for node by common.gypi, avoiding default because of gyp file bug.
     # Should be turned on only for debugging.
     #'v8_enable_handle_zapping%': 0,
@@ -115,8 +112,8 @@
     # Enable embedded builtins.
     'v8_enable_embedded_builtins%': 1,
 
-    # Enable the registration of unwinding info for Windows/x64.
-    'v8_win64_unwinding_info%': 0,
+    # Enable the registration of unwinding info for Windows/x64 and ARM64.
+    'v8_win64_unwinding_info%': 1,
 
     # Enable code comments for builtins in the snapshot (impacts performance).
     'v8_enable_snapshot_code_comments%': 0,
@@ -184,15 +181,26 @@
     # Enable minor mark compact.
     'v8_enable_minor_mc%': 1,
 
+    # Enable lazy source positions by default.
+    'v8_enable_lazy_source_positions%': 1,
+
+    # Disable write barriers when GCs are non-incremental and
+    # heap has single generation.
+    'v8_disable_write_barriers%': 0,
+
+    # Redirect allocation in young generation so that there will be
+    # only one single generation.
+    'v8_enable_single_generation%': 0,
+
+    # Use token threaded dispatch for the regular expression interpreter.
+    # Use switch-based dispatch if this is false.
+    'v8_enable_regexp_interpreter_threaded_dispatch%': 1,
+
     # Variables from v8.gni
 
     # Enable the snapshot feature, for fast context creation.
     # http://v8project.blogspot.com/2015/09/custom-startup-snapshots.html
     'v8_use_snapshot%': 1,
-
-    # Use external files for startup data blobs:
-    # the JS builtins sources and the start snapshot.
-    'v8_use_external_startup_data%': 0,
 
     # Enable ECMAScript Internationalization API. Enabling this feature will
     # add a dependency on the ICU library.
@@ -225,9 +233,6 @@
       ['v8_enable_gdbjit==1', {
         'defines': ['ENABLE_GDB_JIT_INTERFACE',],
       }],
-      ['v8_enable_vtunejit==1', {
-        'defines': ['ENABLE_VTUNE_JIT_INTERFACE',],
-      }],
       ['v8_enable_minor_mc==1', {
         'defines': ['ENABLE_MINOR_MC',],
       }],
@@ -259,6 +264,7 @@
         'defines': [
           'V8_ENABLE_ALLOCATION_TIMEOUT',
           'V8_ENABLE_FORCE_SLOW_PATH',
+          'V8_ENABLE_DOUBLE_CONST_STORE_CHECK',
         ],
       }],
       ['v8_enable_v8_checks==1', {
@@ -289,11 +295,17 @@
           }],
         ],
       }],
-      ['v8_use_external_startup_data==1', {
-        'defines': ['V8_USE_EXTERNAL_STARTUP_DATA',],
+      ['v8_enable_single_generation==1', {
+        'defines': ['V8_ENABLE_SINGLE_GENERATION',],
+      }],
+      ['v8_disable_write_barriers==1', {
+        'defines': ['V8_DISABLE_WRITE_BARRIERS',],
       }],
       ['v8_enable_concurrent_marking==1', {
         'defines': ['V8_CONCURRENT_MARKING',],
+      }],
+      ['v8_enable_lazy_source_positions==1', {
+        'defines': ['V8_ENABLE_LAZY_SOURCE_POSITIONS',],
       }],
       ['v8_check_microtasks_scopes_consistency==1', {
         'defines': ['V8_CHECK_MICROTASKS_SCOPES_CONSISTENCY',],
@@ -318,6 +330,9 @@
       }],
       ['v8_win64_unwinding_info==1', {
         'defines': ['V8_WIN64_UNWINDING_INFO',],
+      }],
+      ['v8_enable_regexp_interpreter_threaded_dispatch==1', {
+        'defines': ['V8_ENABLE_REGEXP_INTERPRETER_THREADED_DISPATCH',],
       }],
     ],  # conditions
     'defines': [

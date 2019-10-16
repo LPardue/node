@@ -5,7 +5,8 @@
 > Stability: 2 - Stable
 
 The `readline` module provides an interface for reading data from a [Readable][]
-stream (such as [`process.stdin`]) one line at a time. It can be accessed using:
+stream (such as [`process.stdin`][]) one line at a time. It can be accessed
+using:
 
 ```js
 const readline = require('readline');
@@ -37,6 +38,8 @@ received on the `input` stream.
 <!-- YAML
 added: v0.1.104
 -->
+
+* Extends: {EventEmitter}
 
 Instances of the `readline.Interface` class are constructed using the
 `readline.createInterface()` method. Every instance is associated with a
@@ -209,7 +212,7 @@ later if necessary.
 Calling `rl.pause()` does not immediately pause other events (including
 `'line'`) from being emitted by the `readline.Interface` instance.
 
-### rl.prompt([preserveCursor])
+### rl.prompt(\[preserveCursor\])
 <!-- YAML
 added: v0.1.98
 -->
@@ -276,7 +279,7 @@ added: v0.1.98
 The `rl.setPrompt()` method sets the prompt that will be written to `output`
 whenever `rl.prompt()` is called.
 
-### rl.write(data[, key])
+### rl.write(data\[, key\])
 <!-- YAML
 added: v0.1.98
 -->
@@ -346,9 +349,13 @@ async function processLineByLine() {
 }
 ```
 
-## readline.clearLine(stream, dir)
+## readline.clearLine(stream, dir\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28674
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `stream` {stream.Writable}
@@ -356,16 +363,28 @@ added: v0.7.7
   * `-1` - to the left from cursor
   * `1` - to the right from cursor
   * `0` - the entire line
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if `stream` wishes for the calling code to wait for
+  the `'drain'` event to be emitted before continuing to write additional data;
+  otherwise `true`.
 
 The `readline.clearLine()` method clears current line of given [TTY][] stream
 in a specified direction identified by `dir`.
 
-## readline.clearScreenDown(stream)
+## readline.clearScreenDown(stream\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28641
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `stream` {stream.Writable}
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if `stream` wishes for the calling code to wait for
+  the `'drain'` event to be emitted before continuing to write additional data;
+  otherwise `true`.
 
 The `readline.clearScreenDown()` method clears the given [TTY][] stream from
 the current position of the cursor down.
@@ -471,19 +490,27 @@ function completer(linePartial, callback) {
 }
 ```
 
-## readline.cursorTo(stream, x, y)
+## readline.cursorTo(stream, x\[, y\]\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28674
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `stream` {stream.Writable}
 * `x` {number}
 * `y` {number}
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if `stream` wishes for the calling code to wait for
+  the `'drain'` event to be emitted before continuing to write additional data;
+  otherwise `true`.
 
 The `readline.cursorTo()` method moves cursor to the specified position in a
 given [TTY][] `stream`.
 
-## readline.emitKeypressEvents(stream[, interface])
+## readline.emitKeypressEvents(stream\[, interface\])
 <!-- YAML
 added: v0.7.7
 -->
@@ -509,14 +536,22 @@ if (process.stdin.isTTY)
   process.stdin.setRawMode(true);
 ```
 
-## readline.moveCursor(stream, dx, dy)
+## readline.moveCursor(stream, dx, dy\[, callback\])
 <!-- YAML
 added: v0.7.7
+changes:
+  - version: v12.7.0
+    pr-url: https://github.com/nodejs/node/pull/28674
+    description: The stream's write() callback and return value are exposed.
 -->
 
 * `stream` {stream.Writable}
 * `dx` {number}
 * `dy` {number}
+* `callback` {Function} Invoked once the operation completes.
+* Returns: {boolean} `false` if `stream` wishes for the calling code to wait for
+  the `'drain'` event to be emitted before continuing to write additional data;
+  otherwise `true`.
 
 The `readline.moveCursor()` method moves the cursor *relative* to its current
 position in a given [TTY][] `stream`.

@@ -5,14 +5,16 @@
 #ifndef V8_AST_SCOPES_H_
 #define V8_AST_SCOPES_H_
 
+#include <numeric>
 #include "src/ast/ast.h"
 #include "src/base/compiler-specific.h"
 #include "src/base/hashmap.h"
 #include "src/base/threaded-list.h"
-#include "src/function-kind.h"
-#include "src/globals.h"
-#include "src/objects.h"
-#include "src/pointer-with-payload.h"
+#include "src/common/globals.h"
+#include "src/objects/function-kind.h"
+#include "src/objects/objects.h"
+#include "src/utils/pointer-with-payload.h"
+#include "src/utils/utils.h"
 #include "src/zone/zone.h"
 
 namespace v8 {
@@ -30,8 +32,8 @@ class Statement;
 class StringSet;
 class VariableProxy;
 
-typedef base::ThreadedList<VariableProxy, VariableProxy::UnresolvedNext>
-    UnresolvedList;
+using UnresolvedList =
+    base::ThreadedList<VariableProxy, VariableProxy::UnresolvedNext>;
 
 // A hash map to support fast variable declaration and lookup.
 class VariableMap : public ZoneHashMap {
@@ -41,7 +43,8 @@ class VariableMap : public ZoneHashMap {
   Variable* Declare(Zone* zone, Scope* scope, const AstRawString* name,
                     VariableMode mode, VariableKind kind,
                     InitializationFlag initialization_flag,
-                    MaybeAssignedFlag maybe_assigned_flag, bool* was_added);
+                    MaybeAssignedFlag maybe_assigned_flag,
+                    bool* was_added);
 
   V8_EXPORT_PRIVATE Variable* Lookup(const AstRawString* name);
   void Remove(Variable* var);
@@ -109,8 +112,10 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
     }
 
     void RestoreEvalFlag() {
-      outer_scope_and_calls_eval_->scope_calls_eval_ =
-          outer_scope_and_calls_eval_.GetPayload();
+      if (outer_scope_and_calls_eval_.GetPayload()) {
+        // This recreates both calls_eval and sloppy_eval_can_extend_vars.
+        outer_scope_and_calls_eval_.GetPointer()->RecordEvalCall();
+      }
     }
 
     void Reparent(DeclarationScope* new_parent);
@@ -263,9 +268,7 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
 
   // Inform the scope and outer scopes that the corresponding code contains an
   // eval call.
-  void RecordEvalCall() {
-    scope_calls_eval_ = true;
-  }
+  inline void RecordEvalCall();
 
   void RecordInnerScopeEvalCall() {
     inner_scope_calls_eval_ = true;
@@ -458,7 +461,7 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   int ContextChainLength(Scope* scope) const;
 
   // The number of contexts between this and the outermost context that has a
-  // sloppy eval call. One if this->calls_sloppy_eval().
+  // sloppy eval call. One if this->sloppy_eval_can_extend_vars().
   int ContextChainLengthUntilOutermostSloppyEval() const;
 
   // Find the closest class scope in the current scope and outer scopes. If no
@@ -608,7 +611,8 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   // list along the way, so full resolution cannot be done afterwards.
   void AnalyzePartially(DeclarationScope* max_outer_scope,
                         AstNodeFactory* ast_node_factory,
-                        UnresolvedList* new_unresolved_list);
+                        UnresolvedList* new_unresolved_list,
+                        bool maybe_in_arrowhead);
   void CollectNonLocals(DeclarationScope* max_outer_scope, Isolate* isolate,
                         ParseInfo* info, Handle<StringSet>* non_locals);
 
@@ -701,9 +705,11 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   // The language mode of this scope.
   STATIC_ASSERT(LanguageModeSize == 2);
   bool is_strict_ : 1;
-  // This scope or a nested catch scope or with scope contain an 'eval' call. At
-  // the 'eval' call site this scope is the declaration scope.
-  bool scope_calls_eval_ : 1;
+  // This scope contains an 'eval' call.
+  bool calls_eval_ : 1;
+  // The context associated with this scope can be extended by a sloppy eval
+  // called inside of it.
+  bool sloppy_eval_can_extend_vars_ : 1;
   // This scope's declarations might not be executed in order (e.g., switch).
   bool scope_nonlinear_ : 1;
   bool is_hidden_ : 1;
@@ -712,7 +718,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
 
   // True if one of the inner scopes or the scope itself calls eval.
   bool inner_scope_calls_eval_ : 1;
-  bool force_context_allocation_ : 1;
   bool force_context_allocation_for_parameters_ : 1;
 
   // True if it holds 'var' declarations.
@@ -752,11 +757,50 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
                                         IsClassConstructor(function_kind())));
   }
 
-  bool calls_sloppy_eval() const {
-    // TODO(delphick): Calculate this when setting and change the name of
-    // scope_calls_eval_.
-    return !is_script_scope() && scope_calls_eval_ &&
-           is_sloppy(language_mode());
+  // Inform the scope and outer scopes that the corresponding code contains an
+  // eval call.
+  void RecordDeclarationScopeEvalCall() {
+    calls_eval_ = true;
+
+    // If this isn't a sloppy eval, we don't care about it.
+    if (language_mode() != LanguageMode::kSloppy) return;
+
+    // Sloppy eval in script scopes can only introduce global variables anyway,
+    // so we don't care that it calls sloppy eval.
+    if (is_script_scope()) return;
+
+    // Sloppy eval in a eval scope can only introduce variables into the outer
+    // (non-eval) declaration scope, not into this eval scope.
+    if (is_eval_scope()) {
+#ifdef DEBUG
+      // One of three things must be true:
+      //   1. The outer non-eval declaration scope should already be marked as
+      //      being extendable by sloppy eval, by the current sloppy eval rather
+      //      than the inner one,
+      //   2. The outer non-eval declaration scope is a script scope and thus
+      //      isn't extendable anyway, or
+      //   3. This is a debug evaluate and all bets are off.
+      DeclarationScope* outer_decl_scope = outer_scope()->GetDeclarationScope();
+      while (outer_decl_scope->is_eval_scope()) {
+        outer_decl_scope = outer_decl_scope->GetDeclarationScope();
+      }
+      if (outer_decl_scope->is_debug_evaluate_scope()) {
+        // Don't check anything.
+        // TODO(9662): Figure out where variables declared by an eval inside a
+        // debug-evaluate actually go.
+      } else if (!outer_decl_scope->is_script_scope()) {
+        DCHECK(outer_decl_scope->sloppy_eval_can_extend_vars_);
+      }
+#endif
+
+      return;
+    }
+
+    sloppy_eval_can_extend_vars_ = true;
+  }
+
+  bool sloppy_eval_can_extend_vars() const {
+    return sloppy_eval_can_extend_vars_;
   }
 
   bool was_lazily_parsed() const { return was_lazily_parsed_; }
@@ -971,7 +1015,8 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   // this records variables which cannot be resolved inside the Scope (we don't
   // yet know what they will resolve to since the outer Scopes are incomplete)
   // and recreates them with the correct Zone with ast_node_factory.
-  void AnalyzePartially(Parser* parser, AstNodeFactory* ast_node_factory);
+  void AnalyzePartially(Parser* parser, AstNodeFactory* ast_node_factory,
+                        bool maybe_in_arrowhead);
 
   // Allocate ScopeInfos for top scope and any inner scopes that need them.
   // Does nothing if ScopeInfo is already allocated.
@@ -1137,13 +1182,21 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   RareData* rare_data_ = nullptr;
 };
 
+void Scope::RecordEvalCall() {
+  calls_eval_ = true;
+  GetDeclarationScope()->RecordDeclarationScopeEvalCall();
+  RecordInnerScopeEvalCall();
+}
+
 Scope::Snapshot::Snapshot(Scope* scope)
-    : outer_scope_and_calls_eval_(scope, scope->scope_calls_eval_),
+    : outer_scope_and_calls_eval_(scope, scope->calls_eval_),
       top_inner_scope_(scope->inner_scope_),
       top_unresolved_(scope->unresolved_list_.end()),
       top_local_(scope->GetClosureScope()->locals_.end()) {
   // Reset in order to record eval calls during this Snapshot's lifetime.
-  outer_scope_and_calls_eval_.GetPointer()->scope_calls_eval_ = false;
+  outer_scope_and_calls_eval_.GetPointer()->calls_eval_ = false;
+  outer_scope_and_calls_eval_.GetPointer()->sloppy_eval_can_extend_vars_ =
+      false;
 }
 
 class ModuleScope final : public DeclarationScope {
@@ -1155,25 +1208,27 @@ class ModuleScope final : public DeclarationScope {
               AstValueFactory* avfactory);
 
   // Returns nullptr in a deserialized scope.
-  ModuleDescriptor* module() const { return module_descriptor_; }
+  SourceTextModuleDescriptor* module() const { return module_descriptor_; }
 
   // Set MODULE as VariableLocation for all variables that will live in a
   // module's export table.
   void AllocateModuleVariables();
 
  private:
-  ModuleDescriptor* const module_descriptor_;
+  SourceTextModuleDescriptor* const module_descriptor_;
 };
 
 class V8_EXPORT_PRIVATE ClassScope : public Scope {
  public:
   ClassScope(Zone* zone, Scope* outer_scope);
   // Deserialization.
-  ClassScope(Zone* zone, Handle<ScopeInfo> scope_info);
+  ClassScope(Zone* zone, AstValueFactory* ast_value_factory,
+             Handle<ScopeInfo> scope_info);
 
   // Declare a private name in the private name map and add it to the
   // local variables of this scope.
-  Variable* DeclarePrivateName(const AstRawString* name, bool* was_added);
+  Variable* DeclarePrivateName(const AstRawString* name, VariableMode mode,
+                               bool* was_added);
 
   void AddUnresolvedPrivateName(VariableProxy* proxy);
 
@@ -1205,6 +1260,11 @@ class V8_EXPORT_PRIVATE ClassScope : public Scope {
   // and the current tail.
   void MigrateUnresolvedPrivateNameTail(AstNodeFactory* ast_node_factory,
                                         UnresolvedList::Iterator tail);
+  Variable* DeclareBrandVariable(AstValueFactory* ast_value_factory,
+                                 int class_token_pos);
+  Variable* brand() {
+    return rare_data_ == nullptr ? nullptr : rare_data_->brand;
+  }
 
  private:
   friend class Scope;
@@ -1222,6 +1282,7 @@ class V8_EXPORT_PRIVATE ClassScope : public Scope {
     explicit RareData(Zone* zone) : private_name_map(zone) {}
     UnresolvedList unresolved_private_names;
     VariableMap private_name_map;
+    Variable* brand = nullptr;
   };
 
   V8_INLINE RareData* EnsureRareData() {

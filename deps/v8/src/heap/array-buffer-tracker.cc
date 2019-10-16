@@ -47,7 +47,7 @@ void LocalArrayBufferTracker::Process(Callback callback) {
         const size_t length = it->second.length;
         // We should decrement before adding to avoid potential overflows in
         // the external memory counters.
-        DCHECK_EQ(it->first->is_wasm_memory(), it->second.is_wasm_memory);
+        DCHECK_EQ(it->first.is_wasm_memory(), it->second.is_wasm_memory);
         tracker->AddInternal(new_buffer, length);
         MemoryChunk::MoveExternalBackingStoreBytes(
             ExternalBackingStoreType::kArrayBuffer,
@@ -68,8 +68,7 @@ void LocalArrayBufferTracker::Process(Callback callback) {
     page_->DecrementExternalBackingStoreBytes(
         ExternalBackingStoreType::kArrayBuffer, freed_memory);
     // TODO(wez): Remove backing-store from external memory accounting.
-    page_->heap()->update_external_memory_concurrently_freed(
-        static_cast<intptr_t>(freed_memory));
+    page_->heap()->update_external_memory_concurrently_freed(freed_memory);
   }
 
   array_buffers_.swap(kept_array_buffers);
@@ -104,7 +103,7 @@ bool ArrayBufferTracker::ProcessBuffers(Page* page, ProcessingMode mode) {
 
   DCHECK(page->SweepingDone());
   tracker->Process([mode](JSArrayBuffer old_buffer, JSArrayBuffer* new_buffer) {
-    MapWord map_word = old_buffer->map_word();
+    MapWord map_word = old_buffer.map_word();
     if (map_word.IsForwardingAddress()) {
       *new_buffer = JSArrayBuffer::cast(map_word.ToForwardingAddress());
       return LocalArrayBufferTracker::kUpdateEntry;

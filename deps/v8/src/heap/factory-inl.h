@@ -9,14 +9,14 @@
 
 // Clients of this interface shouldn't depend on lots of heap internals.
 // Do not include anything from src/heap here!
-#include "src/handles-inl.h"
-#include "src/isolate-inl.h"
-#include "src/objects-inl.h"
+#include "src/execution/isolate-inl.h"
+#include "src/handles/handles-inl.h"
 #include "src/objects/feedback-cell.h"
 #include "src/objects/heap-number-inl.h"
+#include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
 #include "src/objects/string-inl.h"
-#include "src/string-hasher.h"
+#include "src/strings/string-hasher.h"
 
 namespace v8 {
 namespace internal {
@@ -71,13 +71,6 @@ Handle<HeapNumber> Factory::NewHeapNumber(double value,
   return heap_number;
 }
 
-Handle<MutableHeapNumber> Factory::NewMutableHeapNumber(
-    double value, AllocationType allocation) {
-  Handle<MutableHeapNumber> number = NewMutableHeapNumber(allocation);
-  number->set_value(value);
-  return number;
-}
-
 Handle<HeapNumber> Factory::NewHeapNumberFromBits(uint64_t bits,
                                                   AllocationType allocation) {
   Handle<HeapNumber> heap_number = NewHeapNumber(allocation);
@@ -85,16 +78,9 @@ Handle<HeapNumber> Factory::NewHeapNumberFromBits(uint64_t bits,
   return heap_number;
 }
 
-Handle<MutableHeapNumber> Factory::NewMutableHeapNumberFromBits(
-    uint64_t bits, AllocationType allocation) {
-  Handle<MutableHeapNumber> number = NewMutableHeapNumber(allocation);
-  number->set_value_as_bits(bits);
-  return number;
-}
-
-Handle<MutableHeapNumber> Factory::NewMutableHeapNumberWithHoleNaN(
+Handle<HeapNumber> Factory::NewHeapNumberWithHoleNaN(
     AllocationType allocation) {
-  return NewMutableHeapNumberFromBits(kHoleNanInt64, allocation);
+  return NewHeapNumberFromBits(kHoleNanInt64, allocation);
 }
 
 Handle<JSArray> Factory::NewJSArrayWithElements(Handle<FixedArrayBase> elements,
@@ -102,6 +88,15 @@ Handle<JSArray> Factory::NewJSArrayWithElements(Handle<FixedArrayBase> elements,
                                                 AllocationType allocation) {
   return NewJSArrayWithElements(elements, elements_kind, elements->length(),
                                 allocation);
+}
+
+Handle<JSObject> Factory::NewFastOrSlowJSObjectFromMap(
+    Handle<Map> map, int number_of_slow_properties, AllocationType allocation,
+    Handle<AllocationSite> allocation_site) {
+  return map->is_dictionary_map()
+             ? NewSlowJSObjectFromMap(map, number_of_slow_properties,
+                                      allocation, allocation_site)
+             : NewJSObjectFromMap(map, allocation, allocation_site);
 }
 
 Handle<Object> Factory::NewURIError() {
